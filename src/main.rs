@@ -7,6 +7,8 @@ use pnet::packet::Packet;
 fn main() {
     // Read all interfaces
     let mut networks = Networks::new_with_refreshed_list();
+
+    println!("Total information for all interfaces:");
     print_interfaces_total(&networks);
 
     println!("\nAfter 10 seconds:");
