@@ -3,6 +3,8 @@ use sysinfo::Networks;
 use pnet::datalink::Channel::Ethernet;
 use pnet::datalink::{self, NetworkInterface};
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
+use pnet::packet::ipv4::Ipv4Packet;
+use pnet::packet::ipv6::Ipv6Packet;
 use pnet::packet::Packet;
 fn main() {
     //funny_print();
@@ -35,19 +37,25 @@ fn main() {
 
                     match eth.get_ethertype() {
                         EtherTypes::Ipv4 => {
-                            // Parse IPv4 packet
-                            // Example: println!("IPv4 packet: {:?}", ipv4_packet);
+                            if let Some(ipv4) = Ipv4Packet::new(eth.payload()) {
+                                println!("IPv4 source: {:?}", ipv4.get_source());
+                                println!("IPv4 destination: {:?}", ipv4.get_destination());
+                                println!("IPv4 payload: {:?}", ipv4.payload());
+                            }
                         }
                         EtherTypes::Ipv6 => {
-                            // Parse IPv6 packet
-                            // Example: println!("IPv6 packet: {:?}", ipv6_packet);
+                            if let Some(ipv6) = Ipv6Packet::new(eth.payload()) {
+                                println!("IPv6 source: {:?}", ipv6.get_source());
+                                println!("IPv6 destination: {:?}", ipv6.get_destination());
+                                println!("IPv6 payload: {:?}", ipv6.payload());
+                            }
                         }
                         _ => {}
                     }
                 }
             }
             Err(e) => {
-                panic!("An error occurred while reading: {}", e);
+                eprintln!("Error receiving packet: {}", e);
             }
         }
     }
