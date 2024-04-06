@@ -25,8 +25,10 @@ fn main() {
         Ok(_) => panic!("Unhandled channel type"),
         Err(e) => panic!("An error occurred: {}", e),
     };
-
+    let mut count = 0;
     loop {
+        println!("\nPacket number: {}", count);
+        count += 1;
         match rx.next() {
             Ok(packet) => {
                 if let Some(eth) = EthernetPacket::new(packet) {
