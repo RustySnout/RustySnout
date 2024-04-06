@@ -5,14 +5,53 @@ use pnet::datalink::{self, NetworkInterface};
 use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 use pnet::packet::Packet;
 fn main() {
-    // Read all interfaces
-    let mut networks = Networks::new_with_refreshed_list();
+    //funny_print();
+    let interfaces = datalink::interfaces();
+    let interface = interfaces[1].clone();
 
+    let (_tx, mut rx) = match datalink::channel(&interface, Default::default()) {
+        Ok(Ethernet(tx, rx)) => (tx, rx),
+        Ok(_) => panic!("Unhandled channel type"),
+        Err(e) => panic!("An error occurred: {}", e),
+    };
+
+    loop {
+        match rx.next() {
+            Ok(packet) => {
+                if let Some(eth) = EthernetPacket::new(packet) {
+                    // Print Ethernet type
+                    println!("Ethernet type: {:?}", eth.get_ethertype());
+
+                    // Print source and destination MAC addresses
+                    println!("Source MAC: {:?}", eth.get_source());
+                    println!("Destination MAC: {:?}", eth.get_destination());
+
+                    // Handle different Ethernet types if needed
+                    match eth.get_ethertype() {
+                        EtherTypes::Ipv4 => {
+                            // Parse IPv4 packet
+                            // Example: println!("IPv4 packet: {:?}", ipv4_packet);
+                        }
+                        EtherTypes::Ipv6 => {
+                            // Parse IPv6 packet
+                            // Example: println!("IPv6 packet: {:?}", ipv6_packet);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Err(e) => {
+                panic!("An error occurred while reading: {}", e);
+            }
+        }
+    }
+}
+
+fn funny_print() {
+    let mut networks = Networks::new_with_refreshed_list();
     println!("Total information for all interfaces:");
     print_interfaces_total(&networks);
-
     println!("\nAfter 10 seconds:");
-
     print_interfaces_after_x(&mut networks, 10);
 }
 
