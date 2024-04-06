@@ -19,14 +19,11 @@ fn main() {
         match rx.next() {
             Ok(packet) => {
                 if let Some(eth) = EthernetPacket::new(packet) {
-                    // Print Ethernet type
                     println!("Ethernet type: {:?}", eth.get_ethertype());
 
-                    // Print source and destination MAC addresses
                     println!("Source MAC: {:?}", eth.get_source());
                     println!("Destination MAC: {:?}", eth.get_destination());
 
-                    // Handle different Ethernet types if needed
                     match eth.get_ethertype() {
                         EtherTypes::Ipv4 => {
                             // Parse IPv4 packet
