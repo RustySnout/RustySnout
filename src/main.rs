@@ -1,13 +1,60 @@
-use sysinfo::Networks;
+// use sysinfo::Networks;
 
-use pnet::datalink::Channel::Ethernet;
-use pnet::datalink::{self, NetworkInterface};
-use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
-use pnet::packet::ipv4::Ipv4Packet;
-use pnet::packet::ipv6::Ipv6Packet;
-use pnet::packet::Packet;
-fn main() {
+// use pnet::datalink::Channel::Ethernet;
+// use pnet::datalink::{self, NetworkInterface};
+// use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
+// use pnet::packet::ipv4::Ipv4Packet;
+// use pnet::packet::ipv6::Ipv6Packet;
+// use pnet::packet::Packet;
+
+use std::io::{self, BufRead, BufReader};
+use std::process::{Command, Stdio};
+fn main() -> io::Result<()> {
     //funny_print();
+    //listen_for_packets();
+
+    // sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep /path/to/bandwhich
+    let mut child = Command::new("bandwhich")
+        .arg("--raw")
+        .stdout(Stdio::piped())
+        .spawn()?;
+
+    let output = child.stdout.take().expect("Failed to open stdout");
+    let reader = BufReader::new(output);
+
+    let mut refresh_buffer = String::new();
+
+    // Process each line of the output in a loop
+    for line in reader.lines() {
+        let line = line?;
+        // Detect the start of a new refresh block
+        if line.starts_with("Refreshing:") {
+            // Process the previous refresh block, if any
+            if !refresh_buffer.is_empty() {
+                process_refresh_buffer(&refresh_buffer)?;
+                refresh_buffer.clear();
+            }
+            continue;
+        }
+        // Add the line to the current refresh block
+        refresh_buffer.push_str(&line);
+        refresh_buffer.push('\n');
+    }
+
+    // Process the last refresh block, if any
+    if !refresh_buffer.is_empty() {
+        process_refresh_buffer(&refresh_buffer)?;
+    }
+
+    Ok(())
+}
+
+fn process_refresh_buffer(refresh_buffer: &str) -> io::Result<()> {
+    // Process the refresh block here
+    println!("Refresh block:\n{}", refresh_buffer);
+    Ok(())
+}
+/*fn listen_for_packets() {
     let interfaces = datalink::interfaces();
     // Allow user to select interface
     for (i, interface) in interfaces.iter().enumerate() {
@@ -62,7 +109,6 @@ fn main() {
         }
     }
 }
-
 fn funny_print() {
     let mut networks = Networks::new_with_refreshed_list();
     println!("Total information for all interfaces:");
@@ -110,3 +156,4 @@ fn print_interfaces_after_x(networks: &mut Networks, x: u64) {
 
     print_interfaces(networks);
 }
+*/
