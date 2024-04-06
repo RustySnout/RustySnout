@@ -12,6 +12,8 @@ use regex::Regex;
 use std::io::{self, BufRead, BufReader};
 use std::process::{Command, Stdio};
 
+use rusqlite::{params, Connection, Result};
+
 struct Process {
     id: String,
     name: String,
@@ -20,7 +22,7 @@ struct Process {
     connections: u32,
 }
 
-struct Connection {
+struct NetwrokConnection {
     id: String,
     source: String,
     destination: String,
@@ -38,9 +40,166 @@ struct RemoteAddress {
     connections: u32,
 }
 
+struct AppRow {
+    process_name: String,
+}
+
+struct ConnectionRow {
+    cid: u32,
+    source: String,
+    destination: String,
+    protocol: String,
+    up_bps: u64,
+    down_bps: u64,
+    process_name: String,
+}
+
+struct RemoteAddressRow {
+    rid: u32,
+    address: String,
+    up_bps: u64,
+    down_bps: u64,
+    connections: u32,
+}
+
+struct ProcessRow {
+    pid: u32,
+    process_name: String,
+    up_bps: u64,
+    down_bps: u64,
+    connections: u32,
+}
+
 fn main() -> io::Result<()> {
     //funny_print();
     //listen_for_packets();
+
+    // Open a connection to the SQLite database, creates if it doesnt exit
+    let conn = match Connection::open("data.db") {
+        Ok(conn) => conn,
+        Err(err) => {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to open SQLite database: {}", err),
+            ));
+        }
+    };
+
+    // Create the tables if they don't exist
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS App (
+            process_name TEXT PRIMARY KEY
+        )",
+        [],
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to create App table: {}", err),
+        ));
+    }
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS processes (
+            pid INTEGER primary key,
+            process_name TEXT,
+            up_bps INTEGER,
+            down_bps INTEGER,
+            connections INTEGER,
+            constraint fk_processes_name foreign key (process_name) references App (process_name)
+        )",
+        [],
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to create processes table: {}", err),
+        ));
+    }
+
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS connections (
+            cid INTEGER PRIMARY KEY,
+            source TEXT,
+            destination TEXT,
+            protocol TEXT,
+            up_bps INTEGER,
+            down_bps INTEGER,
+            process_name TEXT
+        )",
+        [],
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to create connections table: {}", err),
+        ));
+    }
+
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS remote_addresses (
+            rid INTEGER PRIMARY KEY,
+            address TEXT,
+            up_bps INTEGER,
+            down_bps INTEGER,
+            connections INTEGER
+        )",
+        [],
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to create remote_addresses table: {}", err),
+        ));
+    }
+
+    // test insert and select
+    /*
+    if let Err(err) = conn.execute(
+        "INSERT INTO App (process_name) VALUES (?1)",
+        params!["firefox"],
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to insert into App table: {}", err),
+        ));
+    }
+
+    let mut apps = Vec::new();
+
+    // Execute a SELECT query to retrieve all rows from the App table
+    let mut stmt = match conn.prepare("SELECT * FROM App") {
+        Ok(stmt) => stmt,
+        Err(err) => {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to prepare SELECT query: {}", err),
+            ));
+        }
+    };
+    let rows = match stmt.query_map([], |row| {
+        Ok(AppRow {
+            process_name: row.get(0)?,
+        })
+    }) {
+        Ok(rows) => rows,
+        Err(err) => {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to execute SELECT query: {}", err),
+            ));
+        }
+    };
+
+    // Iterate over the Result object returned by query_map
+    for row in rows {
+        // Unwrap the Result object to get the App instance
+        match row {
+            Ok(app) => {
+                apps.push(app);
+            }
+            Err(err) => eprintln!("Error retrieving row: {:?}", err),
+        }
+    }
+
+    for app in &apps {
+        println!("App process name: {}", app.process_name);
+    } */
 
     // sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep /path/to/bandwhich
     let mut child = Command::new("bandwhich")
@@ -97,7 +256,7 @@ fn parse_raw_block(raw_block: &str) {
     .unwrap();
 
     let mut processes: Vec<Process> = Vec::new();
-    let mut connections: Vec<Connection> = Vec::new();
+    let mut connections: Vec<NetwrokConnection> = Vec::new();
     let mut remote_addresses: Vec<RemoteAddress> = Vec::new();
 
     for line in raw_block.lines() {
@@ -111,7 +270,7 @@ fn parse_raw_block(raw_block: &str) {
             };
             processes.push(process);
         } else if let Some(caps) = connection_re.captures(line) {
-            let connection = Connection {
+            let connection = NetwrokConnection {
                 id: caps[1].to_string(),
                 source: caps[2].to_string(),
                 destination: caps[4].to_string(),
