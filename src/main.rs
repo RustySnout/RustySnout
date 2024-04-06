@@ -7,7 +7,16 @@ use pnet::packet::Packet;
 fn main() {
     //funny_print();
     let interfaces = datalink::interfaces();
-    let interface = interfaces[1].clone();
+    // Allow user to select interface
+    for (i, interface) in interfaces.iter().enumerate() {
+        println!("{}: {:?}", i, interface);
+    }
+    println!("Please select an interface to capture packets: ");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).unwrap();
+    let index = input.trim().parse::<usize>().unwrap();
+
+    let interface = interfaces[index].clone();
 
     let (_tx, mut rx) = match datalink::channel(&interface, Default::default()) {
         Ok(Ethernet(tx, rx)) => (tx, rx),
