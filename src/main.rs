@@ -1,3 +1,6 @@
+// sudo apt update
+// sudo apt install libsqlite3-dev
+
 // use sysinfo::Networks;
 
 // use pnet::datalink::Channel::Ethernet;
