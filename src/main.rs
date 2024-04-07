@@ -5,14 +5,14 @@
 
 // use sysinfo::Networks;
 
-use pnet::datalink::Channel::Ethernet;
-use pnet::datalink::{self, NetworkInterface};
+// use pnet::datalink::Channel::Ethernet;
+use pnet::datalink::{self, /*NetworkInterface*/};
 // use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 // use pnet::packet::ipv4::Ipv4Packet;
 // use pnet::packet::ipv6::Ipv6Packet;
 // use pnet::packet::Packet;
 
-use pnet::packet::ip;
+//use pnet::packet::ip;
 use regex::Regex;
 
 //use core::time;
