@@ -12,10 +12,13 @@
 
 use regex::Regex;
 
+//use core::time;
 use std::io::{self, BufRead, BufReader};
 use std::process::{Command, Stdio};
 
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection /* , Result*/};
+
+use chrono::{/*DateTime,*/ Utc};
 
 struct Process {
     id: String,
@@ -43,7 +46,7 @@ struct RemoteAddress {
     connections: u32,
 }
 
-struct AppRow {
+/*struct AppRow {
     process_name: String,
 }
 
@@ -71,7 +74,7 @@ struct ProcessRow {
     up_bps: u64,
     down_bps: u64,
     connections: u32,
-}
+}*/
 
 fn main() -> io::Result<()> {
     //funny_print();
@@ -91,7 +94,10 @@ fn main() -> io::Result<()> {
     // Create the tables if they don't exist
     if let Err(err) = conn.execute(
         "CREATE TABLE IF NOT EXISTS App (
-            process_name TEXT PRIMARY KEY
+            process_name TEXT,
+            time INTEGER DEFAULT CURRENT_TIMESTAMP,
+            block_number INTEGER,
+            constraint pk_app primary key (process_name, time, block_number)
         )",
         [],
     ) {
@@ -102,11 +108,14 @@ fn main() -> io::Result<()> {
     }
     if let Err(err) = conn.execute(
         "CREATE TABLE IF NOT EXISTS processes (
-            pid INTEGER primary key,
+            pid INTEGER,
             process_name TEXT,
             up_bps INTEGER,
             down_bps INTEGER,
             connections INTEGER,
+            time INTEGER DEFAULT CURRENT_TIMESTAMP,
+            block_number INTEGER,
+            constraint pk_processes primary key (pid, time, block_number),
             constraint fk_processes_name foreign key (process_name) references App (process_name)
         )",
         [],
@@ -119,13 +128,16 @@ fn main() -> io::Result<()> {
 
     if let Err(err) = conn.execute(
         "CREATE TABLE IF NOT EXISTS connections (
-            cid INTEGER PRIMARY KEY,
+            cid INTEGER,
             source TEXT,
             destination TEXT,
             protocol TEXT,
             up_bps INTEGER,
             down_bps INTEGER,
-            process_name TEXT
+            process_name TEXT,
+            time INTEGER DEFAULT CURRENT_TIMESTAMP,
+            block_number INTEGER,
+            CONSTRAINT pk_connections PRIMARY KEY (cid, time, block_number)
         )",
         [],
     ) {
@@ -137,11 +149,14 @@ fn main() -> io::Result<()> {
 
     if let Err(err) = conn.execute(
         "CREATE TABLE IF NOT EXISTS remote_addresses (
-            rid INTEGER PRIMARY KEY,
+            rid INTEGER,
             address TEXT,
             up_bps INTEGER,
             down_bps INTEGER,
-            connections INTEGER
+            connections INTEGER,
+            time INTEGER DEFAULT CURRENT_TIMESTAMP,
+            block_number INTEGER,
+            constraint pk_remote_addresses primary key (rid, time, block_number)
         )",
         [],
     ) {
@@ -214,7 +229,7 @@ fn main() -> io::Result<()> {
     let reader = BufReader::new(output);
 
     let mut refresh_buffer = String::new();
-
+    let mut block_number = 0;
     // Process each line of the output in a loop
     for line in reader.lines() {
         let line = line?;
@@ -222,7 +237,8 @@ fn main() -> io::Result<()> {
         if line.starts_with("Refreshing:") {
             // Process the previous refresh block, if any
             if !refresh_buffer.is_empty() {
-                process_refresh_buffer(&refresh_buffer)?;
+                process_refresh_buffer(&refresh_buffer, block_number)?;
+                block_number += 1;
                 refresh_buffer.clear();
             }
             continue;
@@ -234,21 +250,21 @@ fn main() -> io::Result<()> {
 
     // Process the last refresh block, if any
     if !refresh_buffer.is_empty() {
-        process_refresh_buffer(&refresh_buffer)?;
+        process_refresh_buffer(&refresh_buffer, block_number)?;
     }
 
     Ok(())
 }
 
-fn process_refresh_buffer(refresh_buffer: &str) -> io::Result<()> {
+fn process_refresh_buffer(refresh_buffer: &str, block_number: i32) -> io::Result<()> {
     // Process the refresh block here
     //println!("Refresh block:\n{}", refresh_buffer);
     println!("---------------------------------------------------Processing refresh block---------------------------------------------------");
-    parse_raw_block(refresh_buffer);
+    parse_and_save_raw_block(refresh_buffer, block_number);
     Ok(())
 }
 
-fn parse_raw_block(raw_block: &str) {
+fn parse_and_save_raw_block(raw_block: &str, block_number: i32) {
     let process_re =
         Regex::new(r#"process: <(\d+)> "([^"]+)" up/down Bps: (\d+)/(\d+) connections: (\d+)"#)
             .unwrap();
@@ -295,38 +311,101 @@ fn parse_raw_block(raw_block: &str) {
         }
     }
 
-    println!("\nProcesses:");
+    // println!("\nProcesses:");
+    // for process in processes {
+    //     println!(
+    //         "ID: {}, Name: {}, Up/Down Bps: {}/{}, Connections: {}",
+    //         process.id, process.name, process.up_bps, process.down_bps, process.connections
+    //     );
+    // }
+
+    // println!("\nConnections:");
+    // for connection in connections {
+    //     println!(
+    //         "ID: {}, Source: {}, Destination: {}, Protocol: {}, Up/Down Bps: {}/{}, Process: {}",
+    //         connection.id,
+    //         connection.source,
+    //         connection.destination,
+    //         connection.protocol,
+    //         connection.up_bps,
+    //         connection.down_bps,
+    //         connection.process
+    //     );
+    // }
+
+    // println!("\nRemote Addresses:");
+    // for remote_address in remote_addresses {
+    //     println!(
+    //         "ID: {}, Address: {}, Up/Down Bps: {}/{}, Connections: {}",
+    //         remote_address.id,
+    //         remote_address.address,
+    //         remote_address.up_bps,
+    //         remote_address.down_bps,
+    //         remote_address.connections
+    //     );
+    // }
+
+    // add to tables
+    let current_time = Utc::now().timestamp_millis();
+
+    let conn = match Connection::open("data.db") {
+        Ok(conn) => conn,
+        Err(err) => {
+            eprintln!("Failed to open SQLite database: {}", err);
+            return;
+        }
+    };
+
     for process in processes {
-        println!(
-            "ID: {}, Name: {}, Up/Down Bps: {}/{}, Connections: {}",
-            process.id, process.name, process.up_bps, process.down_bps, process.connections
-        );
+        // insert into app
+        if let Err(err) = conn.execute(
+            "INSERT OR IGNORE INTO App (process_name, time, block_number) VALUES (?1, ?2, ?3)",
+            params![process.name, current_time, block_number],
+        ) {
+            eprintln!("Failed to insert into App table: {}", err);
+        }
+
+        // insert into processes
+        if let Err(err) = conn.execute(
+            "INSERT OR IGNORE INTO processes (pid, process_name, up_bps, down_bps, connections, time, block_number) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![process.id, process.name, process.up_bps, process.down_bps, process.connections, current_time, block_number],
+        ) {
+            eprintln!("Failed to insert {} {current_time} {block_number} into processes table: {}",process.id, err);
+        }
     }
 
-    println!("\nConnections:");
     for connection in connections {
-        println!(
-            "ID: {}, Source: {}, Destination: {}, Protocol: {}, Up/Down Bps: {}/{}, Process: {}",
-            connection.id,
-            connection.source,
-            connection.destination,
-            connection.protocol,
-            connection.up_bps,
-            connection.down_bps,
-            connection.process
-        );
+        // insert into Connections
+        if let Err(err) = conn.execute(
+            "INSERT OR IGNORE INTO connections (cid, source, destination, protocol, up_bps, down_bps, process_name, time, block_number) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![connection.id,
+                    connection.source,
+                    connection.destination,
+                    connection.protocol,
+                    connection.up_bps,
+                    connection.down_bps,
+                    connection.process,
+                    current_time,
+                    block_number],
+        ) {
+            eprintln!("Failed to insert into connections table: {}", err);
+        }
     }
 
-    println!("\nRemote Addresses:");
     for remote_address in remote_addresses {
-        println!(
-            "ID: {}, Address: {}, Up/Down Bps: {}/{}, Connections: {}",
-            remote_address.id,
-            remote_address.address,
-            remote_address.up_bps,
-            remote_address.down_bps,
-            remote_address.connections
-        );
+        // insert into remote_addresses
+        if let Err(err) = conn.execute(
+            "INSERT OR IGNORE INTO remote_addresses (rid, address, up_bps, down_bps, connections, time, block_number) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![remote_address.id,
+                    remote_address.address,
+                    remote_address.up_bps,
+                    remote_address.down_bps,
+                    remote_address.connections,
+                    current_time,
+                    block_number],
+        ) {
+            eprintln!("Failed to insert into remote_addresses table: {}", err);
+        }
     }
 }
 
