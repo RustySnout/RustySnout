@@ -206,8 +206,21 @@ fn main() -> io::Result<()> {
     // initialize the database with the interfaces
     let interfaces = datalink::interfaces();
     // Allow user to select interface
-    for (i, interface) in interfaces.iter().enumerate() {
-        println!("{}: {:?}", i, interface);
+    // for (i, interface) in interfaces.iter().enumerate() {
+    //     println!("{}: {:?}", i, interface);
+    // }
+    // pretty print of the interfaces
+    println!("Interfaces:");
+    for interface in &interfaces {
+        println!("Name: {}", interface.name);
+        println!("Description: {:?}", interface.description);
+        println!("MAC: {:?}", interface.mac);
+        println!("Flags: {:?}", interface.flags);
+        println!("IPs:");
+        for ip in &interface.ips {
+            println!("  {}", ip);
+        }
+        println!();
     }
 
     for interface in interfaces {
@@ -325,39 +338,39 @@ fn parse_and_save_raw_block(raw_block: &str, block_number: i32) {
         }
     }
 
-    // println!("\nProcesses:");
-    // for process in processes {
-    //     println!(
-    //         "ID: {}, Name: {}, Up/Down Bps: {}/{}, Connections: {}",
-    //         process.id, process.name, process.up_bps, process.down_bps, process.connections
-    //     );
-    // }
+    println!("\nProcesses:");
+    for process in &processes {
+        println!(
+            "ID: {}, Name: {}, Up/Down Bps: {}/{}, Connections: {}",
+            process.id, process.name, process.up_bps, process.down_bps, process.connections
+        );
+    }
 
-    // println!("\nConnections:");
-    // for connection in connections {
-    //     println!(
-    //         "ID: {}, Source: {}, Destination: {}, Protocol: {}, Up/Down Bps: {}/{}, Process: {}",
-    //         connection.id,
-    //         connection.source,
-    //         connection.destination,
-    //         connection.protocol,
-    //         connection.up_bps,
-    //         connection.down_bps,
-    //         connection.process
-    //     );
-    // }
+    println!("\nConnections:");
+    for connection in &connections {
+        println!(
+            "ID: {}, Source: {}, Destination: {}, Protocol: {}, Up/Down Bps: {}/{}, Process: {}",
+            connection.id,
+            connection.source,
+            connection.destination,
+            connection.protocol,
+            connection.up_bps,
+            connection.down_bps,
+            connection.process
+        );
+    }
 
-    // println!("\nRemote Addresses:");
-    // for remote_address in remote_addresses {
-    //     println!(
-    //         "ID: {}, Address: {}, Up/Down Bps: {}/{}, Connections: {}",
-    //         remote_address.id,
-    //         remote_address.address,
-    //         remote_address.up_bps,
-    //         remote_address.down_bps,
-    //         remote_address.connections
-    //     );
-    // }
+    println!("\nRemote Addresses:");
+    for remote_address in &remote_addresses {
+        println!(
+            "ID: {}, Address: {}, Up/Down Bps: {}/{}, Connections: {}",
+            remote_address.id,
+            remote_address.address,
+            remote_address.up_bps,
+            remote_address.down_bps,
+            remote_address.connections
+        );
+    }
 
     // add to tables
     let current_time = Utc::now().timestamp_millis();
