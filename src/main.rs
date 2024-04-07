@@ -6,7 +6,7 @@
 // use sysinfo::Networks;
 
 // use pnet::datalink::Channel::Ethernet;
-use pnet::datalink::{self, /*NetworkInterface*/};
+use pnet::datalink::{self /*NetworkInterface*/};
 // use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 // use pnet::packet::ipv4::Ipv4Packet;
 // use pnet::packet::ipv6::Ipv6Packet;
@@ -49,10 +49,10 @@ struct RemoteAddress {
     connections: u32,
 }
 
-struct Interface {
+/*struct Interface {
     name: String,
 }
-/*struct AppRow {
+struct AppRow {
     process_name: String,
 }
 
