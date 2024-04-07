@@ -5,11 +5,11 @@ module.exports = {
    */
   entry: './src/main.js',
   // Put your normal webpack config below here
+  target: 'electron-main',
+  node: {
+    fs: 'empty'
+  },
   module: {
     rules: require('./webpack.rules'),
-    target: 'electron-main',
-    node: {
-      fs: 'empty'
-    }
   },
 };
