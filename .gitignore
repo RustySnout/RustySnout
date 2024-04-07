@@ -24,6 +24,7 @@ target/
 # already existing elements were commented out
 
 #/target
+<<<<<<< HEAD
 
 # React Electron Stuff
 # Logs
@@ -118,3 +119,6 @@ typings/
 
 # Electron-Forge
 out/
+=======
+data.db
+>>>>>>> 750ca78a845ee9ba5a544e0c859332d7337bf2b2
