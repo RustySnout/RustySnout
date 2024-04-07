@@ -1,3 +1,6 @@
+// sudo apt update
+// sudo apt install libsqlite3-dev
+
 // use sysinfo::Networks;
 
 // use pnet::datalink::Channel::Ethernet;
@@ -9,8 +12,13 @@
 
 use regex::Regex;
 
+//use core::time;
 use std::io::{self, BufRead, BufReader};
 use std::process::{Command, Stdio};
+
+use rusqlite::{params, Connection /* , Result*/};
+
+use chrono::{/*DateTime,*/ Utc};
 
 struct Process {
     id: String,
@@ -20,7 +28,7 @@ struct Process {
     connections: u32,
 }
 
-struct Connection {
+struct NetwrokConnection {
     id: String,
     source: String,
     destination: String,
@@ -38,9 +46,178 @@ struct RemoteAddress {
     connections: u32,
 }
 
+/*struct AppRow {
+    process_name: String,
+}
+
+struct ConnectionRow {
+    cid: u32,
+    source: String,
+    destination: String,
+    protocol: String,
+    up_bps: u64,
+    down_bps: u64,
+    process_name: String,
+}
+
+struct RemoteAddressRow {
+    rid: u32,
+    address: String,
+    up_bps: u64,
+    down_bps: u64,
+    connections: u32,
+}
+
+struct ProcessRow {
+    pid: u32,
+    process_name: String,
+    up_bps: u64,
+    down_bps: u64,
+    connections: u32,
+}*/
+
 fn main() -> io::Result<()> {
     //funny_print();
     //listen_for_packets();
+
+    // Open a connection to the SQLite database, creates if it doesnt exit
+    let conn = match Connection::open("data.db") {
+        Ok(conn) => conn,
+        Err(err) => {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to open SQLite database: {}", err),
+            ));
+        }
+    };
+
+    // Create the tables if they don't exist
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS App (
+            process_name TEXT,
+            time INTEGER DEFAULT CURRENT_TIMESTAMP,
+            block_number INTEGER,
+            constraint pk_app primary key (process_name, time, block_number)
+        )",
+        [],
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to create App table: {}", err),
+        ));
+    }
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS processes (
+            pid INTEGER,
+            process_name TEXT,
+            up_bps INTEGER,
+            down_bps INTEGER,
+            connections INTEGER,
+            time INTEGER DEFAULT CURRENT_TIMESTAMP,
+            block_number INTEGER,
+            constraint pk_processes primary key (pid, time, block_number),
+            constraint fk_processes_name foreign key (process_name) references App (process_name)
+        )",
+        [],
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to create processes table: {}", err),
+        ));
+    }
+
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS connections (
+            cid INTEGER,
+            source TEXT,
+            destination TEXT,
+            protocol TEXT,
+            up_bps INTEGER,
+            down_bps INTEGER,
+            process_name TEXT,
+            time INTEGER DEFAULT CURRENT_TIMESTAMP,
+            block_number INTEGER,
+            CONSTRAINT pk_connections PRIMARY KEY (cid, time, block_number)
+        )",
+        [],
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to create connections table: {}", err),
+        ));
+    }
+
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS remote_addresses (
+            rid INTEGER,
+            address TEXT,
+            up_bps INTEGER,
+            down_bps INTEGER,
+            connections INTEGER,
+            time INTEGER DEFAULT CURRENT_TIMESTAMP,
+            block_number INTEGER,
+            constraint pk_remote_addresses primary key (rid, time, block_number)
+        )",
+        [],
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to create remote_addresses table: {}", err),
+        ));
+    }
+
+    // test insert and select
+    /*
+    if let Err(err) = conn.execute(
+        "INSERT INTO App (process_name) VALUES (?1)",
+        params!["firefox"],
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to insert into App table: {}", err),
+        ));
+    }
+
+    let mut apps = Vec::new();
+
+    // Execute a SELECT query to retrieve all rows from the App table
+    let mut stmt = match conn.prepare("SELECT * FROM App") {
+        Ok(stmt) => stmt,
+        Err(err) => {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to prepare SELECT query: {}", err),
+            ));
+        }
+    };
+    let rows = match stmt.query_map([], |row| {
+        Ok(AppRow {
+            process_name: row.get(0)?,
+        })
+    }) {
+        Ok(rows) => rows,
+        Err(err) => {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Failed to execute SELECT query: {}", err),
+            ));
+        }
+    };
+
+    // Iterate over the Result object returned by query_map
+    for row in rows {
+        // Unwrap the Result object to get the App instance
+        match row {
+            Ok(app) => {
+                apps.push(app);
+            }
+            Err(err) => eprintln!("Error retrieving row: {:?}", err),
+        }
+    }
+
+    for app in &apps {
+        println!("App process name: {}", app.process_name);
+    } */
 
     // sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep /path/to/bandwhich
     let mut child = Command::new("bandwhich")
@@ -52,7 +229,7 @@ fn main() -> io::Result<()> {
     let reader = BufReader::new(output);
 
     let mut refresh_buffer = String::new();
-
+    let mut block_number = 0;
     // Process each line of the output in a loop
     for line in reader.lines() {
         let line = line?;
@@ -60,7 +237,8 @@ fn main() -> io::Result<()> {
         if line.starts_with("Refreshing:") {
             // Process the previous refresh block, if any
             if !refresh_buffer.is_empty() {
-                process_refresh_buffer(&refresh_buffer)?;
+                process_refresh_buffer(&refresh_buffer, block_number)?;
+                block_number += 1;
                 refresh_buffer.clear();
             }
             continue;
@@ -72,51 +250,35 @@ fn main() -> io::Result<()> {
 
     // Process the last refresh block, if any
     if !refresh_buffer.is_empty() {
-        process_refresh_buffer(&refresh_buffer)?;
+        process_refresh_buffer(&refresh_buffer, block_number)?;
     }
 
     Ok(())
 }
 
-fn process_refresh_buffer(refresh_buffer: &str) -> io::Result<()> {
+fn process_refresh_buffer(refresh_buffer: &str, block_number: i32) -> io::Result<()> {
     // Process the refresh block here
-    println!("Refresh block:\n{}", refresh_buffer);
+    //println!("Refresh block:\n{}", refresh_buffer);
+    println!("---------------------------------------------------Processing refresh block---------------------------------------------------");
+    parse_and_save_raw_block(refresh_buffer, block_number);
     Ok(())
 }
 
-fn parse_sample_output(sample_output: &str) {
-    let sample_output = r#"
-    Refreshing:
-    process: <1712433282> "gns3server" up/down Bps: 304/0 connections: 2
-    process: <1712433282> "spotify" up/down Bps: 47/59 connections: 5
-    process: <1712433282> "msedge" up/down Bps: 0/50 connections: 1
-    connection: <1712433282> <lo>:8080 => localhost.:46418 (tcp) up/down Bps: 240/0 process: "gns3server"
-    connection: <1712433282> <lo>:46418 => localhost.:8080 (tcp) up/down Bps: 64/0 process: "gns3server"
-    connection: <1712433282> <wlp3s0>:5353 => 192.168.43.1:5353 (udp) up/down Bps: 0/50 process: "msedge"
-    connection: <1712433282> <wlp3s0>:5353 => fe80::6c18:d9ff:fec0:4782:5353 (udp) up/down Bps: 0/50 process: "spotify"
-    connection: <1712433282> <wlp3s0>:41815 => 239.255.255.250:1900 (udp) up/down Bps: 26/0 process: "spotify"
-    connection: <1712433282> <wlp3s0>:5353 => ff02::fb:5353 (udp) up/down Bps: 10/0 process: "spotify"
-    connection: <1712433282> <wlp3s0>:5353 => mdns.mcast.net.:5353 (udp) up/down Bps: 10/0 process: "spotify"
-    connection: <1712433282> <wlp3s0>:55002 => 124.65.199.104.bc.googleusercontent.com.:4070 (tcp) up/down Bps: 0/8 process: "spotify"
-    remote_address: <1712433282> localhost. up/down Bps: 304/0 connections: 2
-    remote_address: <1712433282> 192.168.43.1 up/down Bps: 0/50 connections: 1
-    remote_address: <1712433282> fe80::6c18:d9ff:fec0:4782 up/down Bps: 0/50 connections: 1
-    remote_address: <1712433282> 239.255.255.250 up/down Bps: 26/0 connections: 1
-    remote_address: <1712433282> ff02::fb up/down Bps: 10/0 connections: 1
-    remote_address: <1712433282> mdns.mcast.net. up/down Bps: 10/0 connections: 1
-    remote_address: <1712433282> 124.65.199.104.bc.googleusercontent.com. up/down Bps: 0/8 connections: 1
-"#; 
-
-
-    let process_re = Regex::new(r#"process: <(\d+)> "([^"]+)" up/down Bps: (\d+)/(\d+) connections: (\d+)"#).unwrap();
+fn parse_and_save_raw_block(raw_block: &str, block_number: i32) {
+    let process_re =
+        Regex::new(r#"process: <(\d+)> "([^"]+)" up/down Bps: (\d+)/(\d+) connections: (\d+)"#)
+            .unwrap();
     let connection_re = Regex::new(r#"connection: <(\d+)> <([^>]+)>:([^ ]+) => ([^:]+):(\d+) \(([^)]+)\) up/down Bps: (\d+)/(\d+) process: "([^"]+)""#).unwrap();
-    let remote_address_re = Regex::new(r#"remote_address: <(\d+)> ([^ ]+) up/down Bps: (\d+)/(\d+) connections: (\d+)"#).unwrap();
+    let remote_address_re = Regex::new(
+        r#"remote_address: <(\d+)> ([^ ]+) up/down Bps: (\d+)/(\d+) connections: (\d+)"#,
+    )
+    .unwrap();
 
     let mut processes: Vec<Process> = Vec::new();
-    let mut connections: Vec<Connection> = Vec::new();
+    let mut connections: Vec<NetwrokConnection> = Vec::new();
     let mut remote_addresses: Vec<RemoteAddress> = Vec::new();
 
-    for line in sample_output.lines() {
+    for line in raw_block.lines() {
         if let Some(caps) = process_re.captures(line) {
             let process = Process {
                 id: caps[1].to_string(),
@@ -127,14 +289,14 @@ fn parse_sample_output(sample_output: &str) {
             };
             processes.push(process);
         } else if let Some(caps) = connection_re.captures(line) {
-            let connection = Connection {
+            let connection = NetwrokConnection {
                 id: caps[1].to_string(),
                 source: caps[2].to_string(),
-                destination: caps[4].to_string(), 
-                protocol: caps[6].to_string(), 
+                destination: caps[4].to_string(),
+                protocol: caps[6].to_string(),
                 up_bps: caps[7].parse::<u64>().unwrap(),
-                down_bps: caps[8].parse::<u64>().unwrap(), 
-                process: caps[9].to_string(), 
+                down_bps: caps[8].parse::<u64>().unwrap(),
+                process: caps[9].to_string(),
             };
             connections.push(connection);
         } else if let Some(caps) = remote_address_re.captures(line) {
@@ -149,25 +311,102 @@ fn parse_sample_output(sample_output: &str) {
         }
     }
 
-    println!("\nProcesses:");
+    // println!("\nProcesses:");
+    // for process in processes {
+    //     println!(
+    //         "ID: {}, Name: {}, Up/Down Bps: {}/{}, Connections: {}",
+    //         process.id, process.name, process.up_bps, process.down_bps, process.connections
+    //     );
+    // }
+
+    // println!("\nConnections:");
+    // for connection in connections {
+    //     println!(
+    //         "ID: {}, Source: {}, Destination: {}, Protocol: {}, Up/Down Bps: {}/{}, Process: {}",
+    //         connection.id,
+    //         connection.source,
+    //         connection.destination,
+    //         connection.protocol,
+    //         connection.up_bps,
+    //         connection.down_bps,
+    //         connection.process
+    //     );
+    // }
+
+    // println!("\nRemote Addresses:");
+    // for remote_address in remote_addresses {
+    //     println!(
+    //         "ID: {}, Address: {}, Up/Down Bps: {}/{}, Connections: {}",
+    //         remote_address.id,
+    //         remote_address.address,
+    //         remote_address.up_bps,
+    //         remote_address.down_bps,
+    //         remote_address.connections
+    //     );
+    // }
+
+    // add to tables
+    let current_time = Utc::now().timestamp_millis();
+
+    let conn = match Connection::open("data.db") {
+        Ok(conn) => conn,
+        Err(err) => {
+            eprintln!("Failed to open SQLite database: {}", err);
+            return;
+        }
+    };
+
     for process in processes {
-        println!("ID: {}, Name: {}, Up/Down Bps: {}/{}, Connections: {}", 
-            process.id, process.name, process.up_bps, process.down_bps, process.connections);
+        // insert into app
+        if let Err(err) = conn.execute(
+            "INSERT OR IGNORE INTO App (process_name, time, block_number) VALUES (?1, ?2, ?3)",
+            params![process.name, current_time, block_number],
+        ) {
+            eprintln!("Failed to insert into App table: {}", err);
+        }
+
+        // insert into processes
+        if let Err(err) = conn.execute(
+            "INSERT OR IGNORE INTO processes (pid, process_name, up_bps, down_bps, connections, time, block_number) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![process.id, process.name, process.up_bps, process.down_bps, process.connections, current_time, block_number],
+        ) {
+            eprintln!("Failed to insert {} {current_time} {block_number} into processes table: {}",process.id, err);
+        }
     }
-    
-    println!("\nConnections:");
+
     for connection in connections {
-        println!("ID: {}, Source: {}, Destination: {}, Protocol: {}, Up/Down Bps: {}/{}, Process: {}", 
-            connection.id, connection.source, connection.destination, connection.protocol, connection.up_bps, connection.down_bps, connection.process);
+        // insert into Connections
+        if let Err(err) = conn.execute(
+            "INSERT OR IGNORE INTO connections (cid, source, destination, protocol, up_bps, down_bps, process_name, time, block_number) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![connection.id,
+                    connection.source,
+                    connection.destination,
+                    connection.protocol,
+                    connection.up_bps,
+                    connection.down_bps,
+                    connection.process,
+                    current_time,
+                    block_number],
+        ) {
+            eprintln!("Failed to insert into connections table: {}", err);
+        }
     }
 
-    println!("\nRemote Addresses:");
     for remote_address in remote_addresses {
-        println!("ID: {}, Address: {}, Up/Down Bps: {}/{}, Connections: {}", 
-            remote_address.id, remote_address.address, remote_address.up_bps, remote_address.down_bps, remote_address.connections);
+        // insert into remote_addresses
+        if let Err(err) = conn.execute(
+            "INSERT OR IGNORE INTO remote_addresses (rid, address, up_bps, down_bps, connections, time, block_number) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![remote_address.id,
+                    remote_address.address,
+                    remote_address.up_bps,
+                    remote_address.down_bps,
+                    remote_address.connections,
+                    current_time,
+                    block_number],
+        ) {
+            eprintln!("Failed to insert into remote_addresses table: {}", err);
+        }
     }
-
-   
 }
 
 /*fn listen_for_packets() {
