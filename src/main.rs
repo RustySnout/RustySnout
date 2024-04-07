@@ -15,6 +15,8 @@ use pnet::datalink::{self /*NetworkInterface*/};
 //use pnet::packet::ip;
 use regex::Regex;
 
+use std::thread;
+
 //use core::time;
 use std::io::{self, BufRead, BufReader};
 use std::process::{Command, Stdio};
@@ -23,7 +25,7 @@ use rusqlite::{params, Connection /* , Result*/};
 
 use chrono::{/*DateTime,*/ Utc};
 
-struct Process {
+/*struct Process {
     id: String,
     name: String,
     up_bps: u64,
@@ -49,7 +51,7 @@ struct RemoteAddress {
     connections: u32,
 }
 
-/*struct Interface {
+struct Interface {
     name: String,
 }
 struct AppRow {
@@ -81,6 +83,154 @@ struct ProcessRow {
     down_bps: u64,
     connections: u32,
 }*/
+
+use actix_web::{get, web, App, HttpServer, Responder};
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
+struct Process {
+    id: String,
+    name: String,
+    up_bps: u64,
+    down_bps: u64,
+    connections: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct NetwrokConnection {
+    id: String,
+    source: String,
+    destination: String,
+    protocol: String,
+    up_bps: u64,
+    down_bps: u64,
+    process: String,
+}
+
+#[derive(Debug, Serialize)]
+struct RemoteAddress {
+    id: String,
+    address: String,
+    up_bps: u64,
+    down_bps: u64,
+    connections: u32,
+}
+
+#[get("/")]
+async fn index() -> impl Responder {
+    // Retrieve data from the database
+    let conn = Connection::open("data.db").expect("Failed to open database");
+
+    // Retrieve processes from the database
+    let processes = match conn.prepare("SELECT * FROM processes") {
+        Ok(mut stmt) => {
+            match stmt.query_map([], |row| {
+                Ok(Process {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    up_bps: row.get(2)?,
+                    down_bps: row.get(3)?,
+                    connections: row.get(4)?,
+                })
+            }) {
+                Ok(processes) => {
+                    processes
+                        .map(|p| p.unwrap()) // Unwrap each Result<Process, _>
+                        .collect::<Vec<Process>>() // Collect into Vec<Process>
+                }
+                Err(err) => {
+                    eprintln!("Error querying processes: {}", err);
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "Failed to query processes",
+                    ));
+                }
+            }
+        }
+        Err(err) => {
+            eprintln!("Error preparing statement for processes: {}", err);
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "Failed to prepare statement for processes",
+            ));
+        }
+    };
+
+    // Retrieve connections from the database
+    let connections = conn
+        .prepare("SELECT * FROM connections")
+        .unwrap()
+        .query_map([], |row| {
+            Ok(NetwrokConnection {
+                id: row.get(0)?,
+                source: row.get(1)?,
+                destination: row.get(2)?,
+                protocol: row.get(3)?,
+                up_bps: row.get(4)?,
+                down_bps: row.get(5)?,
+                process: row.get(6)?,
+            })
+        })
+        .unwrap()
+        .map(|c| c.unwrap())
+        .collect::<Vec<NetwrokConnection>>();
+
+    // Retrieve remote addresses from the database
+    let remote_addresses = conn
+        .prepare("SELECT * FROM remote_addresses")
+        .unwrap()
+        .query_map([], |row| {
+            Ok(RemoteAddress {
+                id: row.get(0)?,
+                address: row.get(1)?,
+                up_bps: row.get(2)?,
+                down_bps: row.get(3)?,
+                connections: row.get(4)?,
+            })
+        })
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect::<Vec<RemoteAddress>>();
+
+    // Render HTML template with data
+    let html = format!(
+        r#"
+        <html>
+            <head><title>Network Info</title></head>
+            <body>
+                <h1>Processes</h1>
+                <ul>{}</ul>
+                <h1>Connections</h1>
+                <ul>{}</ul>
+                <h1>Remote Addresses</h1>
+                <ul>{}</ul>
+            </body>
+        </html>
+        "#,
+        processes
+            .iter()
+            .map(|p| format!("<li>{:?}</li>", p))
+            .collect::<String>(),
+        connections
+            .iter()
+            .map(|c| format!("<li>{:?}</li>", c))
+            .collect::<String>(),
+        remote_addresses
+            .iter()
+            .map(|r| format!("<li>{:?}</li>", r))
+            .collect::<String>()
+    );
+
+    Ok(html)
+}
+
+async fn run_frontend() -> Result<(), std::io::Error> {
+    HttpServer::new(|| App::new().service(index))
+        .bind("127.0.0.1:8080")?
+        .run()
+        .await?;
+    Ok(())
+}
 
 fn main() -> io::Result<()> {
     //funny_print();
@@ -114,7 +264,7 @@ fn main() -> io::Result<()> {
     }
     if let Err(err) = conn.execute(
         "CREATE TABLE IF NOT EXISTS processes (
-            pid INTEGER,
+            pid TEXT,
             process_name TEXT,
             up_bps INTEGER,
             down_bps INTEGER,
@@ -232,6 +382,15 @@ fn main() -> io::Result<()> {
                 ));
             }
         }
+    }
+
+    let future_result = run_frontend(); // Obtain the Future
+    let result = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(future_result); // Await the Future
+
+    if let Err(err) = result {
+        eprintln!("Error running frontend: {}", err);
     }
 
     let mut child = Command::new("bandwhich")
