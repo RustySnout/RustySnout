@@ -149,8 +149,10 @@ fn main() -> io::Result<()> {
 
     if let Err(err) = conn.execute(
         "CREATE TABLE IF NOT EXISTS interfacesIPS (
-            interface_name TEXT PRIMARY KEY,
-            ips TEXT
+            interface_name TEXT,
+            ips TEXT,
+            FOREIGN KEY (interface_name) REFERENCES interfaces (interface_name),
+            PRIMARY KEY (interface_name, ips)
         )",
         [],
     ) {
