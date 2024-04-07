@@ -3,13 +3,14 @@
 
 // use sysinfo::Networks;
 
-// use pnet::datalink::Channel::Ethernet;
-// use pnet::datalink::{self, NetworkInterface};
+use pnet::datalink::Channel::Ethernet;
+use pnet::datalink::{self, NetworkInterface};
 // use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 // use pnet::packet::ipv4::Ipv4Packet;
 // use pnet::packet::ipv6::Ipv6Packet;
 // use pnet::packet::Packet;
 
+use pnet::packet::ip;
 use regex::Regex;
 
 //use core::time;
@@ -46,6 +47,9 @@ struct RemoteAddress {
     connections: u32,
 }
 
+struct Interface {
+    name: String,
+}
 /*struct AppRow {
     process_name: String,
 }
@@ -127,6 +131,34 @@ fn main() -> io::Result<()> {
     }
 
     if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS interfaces (
+            interface_name TEXT PRIMARY KEY,
+            description TEXT,
+            mac TEXT,
+            flags TEXT
+        )",
+        [],
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to create interfaces table: {}", err),
+        ));
+    }
+
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS interfacesIPS (
+            interface_name TEXT PRIMARY KEY,
+            ips TEXT
+        )",
+        [],
+    ) {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Failed to create interfacesIPS table: {}", err),
+        ));
+    }
+
+    if let Err(err) = conn.execute(
         "CREATE TABLE IF NOT EXISTS connections (
             cid INTEGER,
             source TEXT,
@@ -137,7 +169,8 @@ fn main() -> io::Result<()> {
             process_name TEXT,
             time INTEGER DEFAULT CURRENT_TIMESTAMP,
             block_number INTEGER,
-            CONSTRAINT pk_connections PRIMARY KEY (cid, time, block_number)
+            CONSTRAINT pk_connections PRIMARY KEY (cid, time, block_number),
+            CONSTRAINT fk_connections_source FOREIGN KEY (source) REFERENCES interfaces (interface_name)
         )",
         [],
     ) {
@@ -166,58 +199,36 @@ fn main() -> io::Result<()> {
         ));
     }
 
-    // test insert and select
-    /*
-    if let Err(err) = conn.execute(
-        "INSERT INTO App (process_name) VALUES (?1)",
-        params!["firefox"],
-    ) {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to insert into App table: {}", err),
-        ));
+    // initialize the database with the interfaces
+    let interfaces = datalink::interfaces();
+    // Allow user to select interface
+    for (i, interface) in interfaces.iter().enumerate() {
+        println!("{}: {:?}", i, interface);
     }
 
-    let mut apps = Vec::new();
-
-    // Execute a SELECT query to retrieve all rows from the App table
-    let mut stmt = match conn.prepare("SELECT * FROM App") {
-        Ok(stmt) => stmt,
-        Err(err) => {
+    for interface in interfaces {
+        if let Err(err) = conn.execute(
+            "INSERT OR IGNORE INTO interfaces (interface_name, description, mac, flags) VALUES (?1, ?2, ?3, ?4)",
+            params![interface.name, interface.description, interface.mac.unwrap().to_string(), interface.flags.to_string()],
+        ) {
             return Err(io::Error::new(
                 io::ErrorKind::Other,
-                format!("Failed to prepare SELECT query: {}", err),
+                format!("Failed to insert into interfaces table: {}", err),
             ));
         }
-    };
-    let rows = match stmt.query_map([], |row| {
-        Ok(AppRow {
-            process_name: row.get(0)?,
-        })
-    }) {
-        Ok(rows) => rows,
-        Err(err) => {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to execute SELECT query: {}", err),
-            ));
-        }
-    };
-
-    // Iterate over the Result object returned by query_map
-    for row in rows {
-        // Unwrap the Result object to get the App instance
-        match row {
-            Ok(app) => {
-                apps.push(app);
+        // insert into interfacesIPS
+        for ip in interface.ips {
+            if let Err(err) = conn.execute(
+                "INSERT OR IGNORE INTO interfacesIPS (interface_name, ips) VALUES (?1, ?2)",
+                params![interface.name, ip.to_string()],
+            ) {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Failed to insert into interfacesIPS table: {}", err),
+                ));
             }
-            Err(err) => eprintln!("Error retrieving row: {:?}", err),
         }
     }
-
-    for app in &apps {
-        println!("App process name: {}", app.process_name);
-    } */
 
     // sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep /path/to/bandwhich
     let mut child = Command::new("bandwhich")
