@@ -7,6 +7,12 @@ rules.push({
 
 module.exports = {
   // Put your normal webpack config below here
+  resolve: {
+    fallback: {
+      path: require.resolve("path-browserify"),
+      util: require.resolve("util/"),
+    },
+  },
   module: {
     rules,
   },

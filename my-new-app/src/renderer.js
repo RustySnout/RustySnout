@@ -30,3 +30,11 @@ import './index.css';
 import './index.js';
 
 console.log('👋 This message is being logged by "renderer.js", included via webpack');
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const api = window.api;
+  const processes = await api.getprocesses();
+  console.log(processes);
+  console.log('Hello from renderer.js');
+
+});
