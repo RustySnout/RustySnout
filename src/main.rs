@@ -1,16 +1,18 @@
 // sudo apt update
 // sudo apt install libsqlite3-dev
+// cargo install bandwhich
+// sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep /path/to/bandwhich
 
 // use sysinfo::Networks;
 
-use pnet::datalink::Channel::Ethernet;
-use pnet::datalink::{self, NetworkInterface};
+// use pnet::datalink::Channel::Ethernet;
+use pnet::datalink::{self /*NetworkInterface*/};
 // use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
 // use pnet::packet::ipv4::Ipv4Packet;
 // use pnet::packet::ipv6::Ipv6Packet;
 // use pnet::packet::Packet;
 
-use pnet::packet::ip;
+//use pnet::packet::ip;
 use regex::Regex;
 
 //use core::time;
@@ -47,10 +49,10 @@ struct RemoteAddress {
     connections: u32,
 }
 
-struct Interface {
+/*struct Interface {
     name: String,
 }
-/*struct AppRow {
+struct AppRow {
     process_name: String,
 }
 
@@ -147,8 +149,10 @@ fn main() -> io::Result<()> {
 
     if let Err(err) = conn.execute(
         "CREATE TABLE IF NOT EXISTS interfacesIPS (
-            interface_name TEXT PRIMARY KEY,
-            ips TEXT
+            interface_name TEXT,
+            ips TEXT,
+            FOREIGN KEY (interface_name) REFERENCES interfaces (interface_name),
+            PRIMARY KEY (interface_name, ips)
         )",
         [],
     ) {
@@ -230,7 +234,6 @@ fn main() -> io::Result<()> {
         }
     }
 
-    // sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep /path/to/bandwhich
     let mut child = Command::new("bandwhich")
         .arg("--raw")
         .stdout(Stdio::piped())
