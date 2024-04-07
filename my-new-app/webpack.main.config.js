@@ -7,5 +7,9 @@ module.exports = {
   // Put your normal webpack config below here
   module: {
     rules: require('./webpack.rules'),
+    target: 'electron-main',
+    node: {
+      fs: 'empty'
+    }
   },
 };
