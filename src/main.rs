@@ -1,5 +1,7 @@
 // sudo apt update
 // sudo apt install libsqlite3-dev
+// cargo install bandwhich
+// sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep /path/to/bandwhich
 
 // use sysinfo::Networks;
 
@@ -230,7 +232,6 @@ fn main() -> io::Result<()> {
         }
     }
 
-    // sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep /path/to/bandwhich
     let mut child = Command::new("bandwhich")
         .arg("--raw")
         .stdout(Stdio::piped())
