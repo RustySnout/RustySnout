@@ -6,8 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bandwhich = "0.22.2"
 chrono = "0.4.37"
+iced = "0.12.0"
+iced_aw = { version = "0.8.0", default-features = true}
+magic = "0.16.2"
 pnet = "0.34.0"
 regex = "1.10.4"
 rusqlite = "0.31.0"

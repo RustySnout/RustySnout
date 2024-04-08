@@ -1,16 +1,26 @@
 # RustySnout
 A network monitor and control application written in Rust
 
-## Before you run
+## Installation
 
+### Ubuntu-based Distros
 ```
 sudo apt update
 sudo apt install libsqlite3-dev
 cargo install bandwhich
 ```
 
+### Arch-based Distros
 ```
-whcih bandwhich
+sudo pacman -S sqlite3
+sudo pacman -S bandwhich
+```
+
+
+---
+
+```
+which bandwhich
 ```
 Using the path returned by the previous command:
 ```
