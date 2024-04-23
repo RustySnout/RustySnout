@@ -82,9 +82,16 @@ struct ProcessRow {
     connections: u32,
 }*/
 
+mod interface_throttling;
+mod process_throttling;
+
 fn main() -> io::Result<()> {
     //funny_print();
     //listen_for_packets();
+   
+    // need CLI menu for user
+    interface_throttling::remove_interface_throttling("wlp3s0");
+    //interface_throttling::interface_Throttling("wlp3s0", 100); //1kbit
 
     // Open a connection to the SQLite database, creates if it doesnt exit
     let conn = match Connection::open("data.db") {
