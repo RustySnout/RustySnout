@@ -4,7 +4,32 @@
 // sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep /path/to/bandwhich
 
 // use sysinfo::Networks;
+mod cli;
+mod display;
+mod network;
+mod os;
 
+use crate::os::ProcessInfo;
+
+use network::{
+    dns::{self, IpTable},
+    LocalSocket, Sniffer, Utilization,
+};
+
+use std::{
+    collections::HashMap,
+    fmt,
+    fs::File,
+    net::Ipv4Addr,
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Mutex, RwLock,
+    },
+    thread::{self, park_timeout},
+    time::{Duration, Instant},
+};
+
+use anyhow::Ok;
 // use pnet::datalink::Channel::Ethernet;
 use pnet::datalink::{self /*NetworkInterface*/};
 // use pnet::packet::ethernet::{EtherTypes, EthernetPacket};
@@ -19,9 +44,17 @@ use regex::Regex;
 use std::io::{self, BufRead, BufReader};
 use std::process::{Command, Stdio};
 
+use crossterm::{
+    event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+    terminal,
+};
+
 use rusqlite::{params, Connection /* , Result*/};
 
 use chrono::{/*DateTime,*/ Utc};
+use pnet::datalink::{DataLinkReceiver, NetworkInterface};
+
+use crate::cli::Opt;
 
 struct Process {
     id: String,
@@ -49,383 +82,21 @@ struct RemoteAddress {
     connections: u32,
 }
 
-/*struct Interface {
-    name: String,
-}
-struct AppRow {
-    process_name: String,
+pub struct OpenSockets {
+    sockets_to_procs: HashMap<LocalSocket, ProcessInfo>,
 }
 
-struct ConnectionRow {
-    cid: u32,
-    source: String,
-    destination: String,
-    protocol: String,
-    up_bps: u64,
-    down_bps: u64,
-    process_name: String,
+pub struct OsInputOutput {
+    pub interfaces_with_frames: Vec<(NetworkInterface, Box<dyn DataLinkReceiver>)>,
+    pub get_open_sockets: fn() -> OpenSockets,
+    pub terminal_events: Box<dyn Iterator<Item = Event> + Send>,
+    pub dns_client: Option<dns::Client>,
+    pub write_to_stdout: Box<dyn FnMut(String) + Send>,
 }
 
-struct RemoteAddressRow {
-    rid: u32,
-    address: String,
-    up_bps: u64,
-    down_bps: u64,
-    connections: u32,
-}
-
-struct ProcessRow {
-    pid: u32,
-    process_name: String,
-    up_bps: u64,
-    down_bps: u64,
-    connections: u32,
-}*/
-
-fn main() -> io::Result<()> {
-    //funny_print();
-    //listen_for_packets();
-
-    // Open a connection to the SQLite database, creates if it doesnt exit
-    let conn = match Connection::open("data.db") {
-        Ok(conn) => conn,
-        Err(err) => {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to open SQLite database: {}", err),
-            ));
-        }
-    };
-
-    // Create the tables if they don't exist
-    if let Err(err) = conn.execute(
-        "CREATE TABLE IF NOT EXISTS App (
-            process_name TEXT,
-            time INTEGER DEFAULT CURRENT_TIMESTAMP,
-            block_number INTEGER,
-            constraint pk_app primary key (process_name, time, block_number)
-        )",
-        [],
-    ) {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to create App table: {}", err),
-        ));
-    }
-    if let Err(err) = conn.execute(
-        "CREATE TABLE IF NOT EXISTS processes (
-            pid INTEGER,
-            process_name TEXT,
-            up_bps INTEGER,
-            down_bps INTEGER,
-            connections INTEGER,
-            time INTEGER DEFAULT CURRENT_TIMESTAMP,
-            block_number INTEGER,
-            constraint pk_processes primary key (pid, time, block_number),
-            constraint fk_processes_name foreign key (process_name) references App (process_name)
-        )",
-        [],
-    ) {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to create processes table: {}", err),
-        ));
-    }
-
-    if let Err(err) = conn.execute(
-        "CREATE TABLE IF NOT EXISTS interfaces (
-            interface_name TEXT PRIMARY KEY,
-            description TEXT,
-            mac TEXT,
-            flags TEXT
-        )",
-        [],
-    ) {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to create interfaces table: {}", err),
-        ));
-    }
-
-    if let Err(err) = conn.execute(
-        "CREATE TABLE IF NOT EXISTS interfacesIPS (
-            interface_name TEXT,
-            ips TEXT,
-            FOREIGN KEY (interface_name) REFERENCES interfaces (interface_name),
-            PRIMARY KEY (interface_name, ips)
-        )",
-        [],
-    ) {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to create interfacesIPS table: {}", err),
-        ));
-    }
-
-    if let Err(err) = conn.execute(
-        "CREATE TABLE IF NOT EXISTS connections (
-            cid INTEGER,
-            source TEXT,
-            destination TEXT,
-            protocol TEXT,
-            up_bps INTEGER,
-            down_bps INTEGER,
-            process_name TEXT,
-            time INTEGER DEFAULT CURRENT_TIMESTAMP,
-            block_number INTEGER,
-            CONSTRAINT pk_connections PRIMARY KEY (cid, time, block_number),
-            CONSTRAINT fk_connections_source FOREIGN KEY (source) REFERENCES interfaces (interface_name)
-        )",
-        [],
-    ) {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to create connections table: {}", err),
-        ));
-    }
-
-    if let Err(err) = conn.execute(
-        "CREATE TABLE IF NOT EXISTS remote_addresses (
-            rid INTEGER,
-            address TEXT,
-            up_bps INTEGER,
-            down_bps INTEGER,
-            connections INTEGER,
-            time INTEGER DEFAULT CURRENT_TIMESTAMP,
-            block_number INTEGER,
-            constraint pk_remote_addresses primary key (rid, time, block_number)
-        )",
-        [],
-    ) {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to create remote_addresses table: {}", err),
-        ));
-    }
-
-    // initialize the database with the interfaces
+fn main() -> anyhow::Result<()> {
+    // print all interface names and allow user to select it as Option<&str>
     let interfaces = datalink::interfaces();
-    // Allow user to select interface
-    for (i, interface) in interfaces.iter().enumerate() {
-        println!("{}: {:?}", i, interface);
-    }
-
-    for interface in interfaces {
-        if let Err(err) = conn.execute(
-            "INSERT OR IGNORE INTO interfaces (interface_name, description, mac, flags) VALUES (?1, ?2, ?3, ?4)",
-            params![interface.name, interface.description, interface.mac.unwrap().to_string(), interface.flags.to_string()],
-        ) {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to insert into interfaces table: {}", err),
-            ));
-        }
-        // insert into interfacesIPS
-        for ip in interface.ips {
-            if let Err(err) = conn.execute(
-                "INSERT OR IGNORE INTO interfacesIPS (interface_name, ips) VALUES (?1, ?2)",
-                params![interface.name, ip.to_string()],
-            ) {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to insert into interfacesIPS table: {}", err),
-                ));
-            }
-        }
-    }
-
-    let mut child = Command::new("bandwhich")
-        .arg("--raw")
-        .stdout(Stdio::piped())
-        .spawn()?;
-
-    let output = child.stdout.take().expect("Failed to open stdout");
-    let reader = BufReader::new(output);
-
-    let mut refresh_buffer = String::new();
-    let mut block_number = 0;
-    // Process each line of the output in a loop
-    for line in reader.lines() {
-        let line = line?;
-        // Detect the start of a new refresh block
-        if line.starts_with("Refreshing:") {
-            // Process the previous refresh block, if any
-            if !refresh_buffer.is_empty() {
-                process_refresh_buffer(&refresh_buffer, block_number)?;
-                block_number += 1;
-                refresh_buffer.clear();
-            }
-            continue;
-        }
-        // Add the line to the current refresh block
-        refresh_buffer.push_str(&line);
-        refresh_buffer.push('\n');
-    }
-
-    // Process the last refresh block, if any
-    if !refresh_buffer.is_empty() {
-        process_refresh_buffer(&refresh_buffer, block_number)?;
-    }
-
-    Ok(())
-}
-
-fn process_refresh_buffer(refresh_buffer: &str, block_number: i32) -> io::Result<()> {
-    // Process the refresh block here
-    //println!("Refresh block:\n{}", refresh_buffer);
-    println!("---------------------------------------------------Processing refresh block---------------------------------------------------");
-    parse_and_save_raw_block(refresh_buffer, block_number);
-    Ok(())
-}
-
-fn parse_and_save_raw_block(raw_block: &str, block_number: i32) {
-    let process_re =
-        Regex::new(r#"process: <(\d+)> "([^"]+)" up/down Bps: (\d+)/(\d+) connections: (\d+)"#)
-            .unwrap();
-    let connection_re = Regex::new(r#"connection: <(\d+)> <([^>]+)>:([^ ]+) => ([^:]+):(\d+) \(([^)]+)\) up/down Bps: (\d+)/(\d+) process: "([^"]+)""#).unwrap();
-    let remote_address_re = Regex::new(
-        r#"remote_address: <(\d+)> ([^ ]+) up/down Bps: (\d+)/(\d+) connections: (\d+)"#,
-    )
-    .unwrap();
-
-    let mut processes: Vec<Process> = Vec::new();
-    let mut connections: Vec<NetwrokConnection> = Vec::new();
-    let mut remote_addresses: Vec<RemoteAddress> = Vec::new();
-
-    for line in raw_block.lines() {
-        if let Some(caps) = process_re.captures(line) {
-            let process = Process {
-                id: caps[1].to_string(),
-                name: caps[2].to_string(),
-                up_bps: caps[3].parse::<u64>().unwrap(),
-                down_bps: caps[4].parse::<u64>().unwrap(),
-                connections: caps[5].parse::<u32>().unwrap(),
-            };
-            processes.push(process);
-        } else if let Some(caps) = connection_re.captures(line) {
-            let connection = NetwrokConnection {
-                id: caps[1].to_string(),
-                source: caps[2].to_string(),
-                destination: caps[4].to_string(),
-                protocol: caps[6].to_string(),
-                up_bps: caps[7].parse::<u64>().unwrap(),
-                down_bps: caps[8].parse::<u64>().unwrap(),
-                process: caps[9].to_string(),
-            };
-            connections.push(connection);
-        } else if let Some(caps) = remote_address_re.captures(line) {
-            let remote_address = RemoteAddress {
-                id: caps[1].to_string(),
-                address: caps[2].to_string(),
-                up_bps: caps[3].parse::<u64>().unwrap(),
-                down_bps: caps[4].parse::<u64>().unwrap(),
-                connections: caps[5].parse::<u32>().unwrap(),
-            };
-            remote_addresses.push(remote_address);
-        }
-    }
-
-    // println!("\nProcesses:");
-    // for process in processes {
-    //     println!(
-    //         "ID: {}, Name: {}, Up/Down Bps: {}/{}, Connections: {}",
-    //         process.id, process.name, process.up_bps, process.down_bps, process.connections
-    //     );
-    // }
-
-    // println!("\nConnections:");
-    // for connection in connections {
-    //     println!(
-    //         "ID: {}, Source: {}, Destination: {}, Protocol: {}, Up/Down Bps: {}/{}, Process: {}",
-    //         connection.id,
-    //         connection.source,
-    //         connection.destination,
-    //         connection.protocol,
-    //         connection.up_bps,
-    //         connection.down_bps,
-    //         connection.process
-    //     );
-    // }
-
-    // println!("\nRemote Addresses:");
-    // for remote_address in remote_addresses {
-    //     println!(
-    //         "ID: {}, Address: {}, Up/Down Bps: {}/{}, Connections: {}",
-    //         remote_address.id,
-    //         remote_address.address,
-    //         remote_address.up_bps,
-    //         remote_address.down_bps,
-    //         remote_address.connections
-    //     );
-    // }
-
-    // add to tables
-    let current_time = Utc::now().timestamp_millis();
-
-    let conn = match Connection::open("data.db") {
-        Ok(conn) => conn,
-        Err(err) => {
-            eprintln!("Failed to open SQLite database: {}", err);
-            return;
-        }
-    };
-
-    for process in processes {
-        // insert into app
-        if let Err(err) = conn.execute(
-            "INSERT OR IGNORE INTO App (process_name, time, block_number) VALUES (?1, ?2, ?3)",
-            params![process.name, current_time, block_number],
-        ) {
-            eprintln!("Failed to insert into App table: {}", err);
-        }
-
-        // insert into processes
-        if let Err(err) = conn.execute(
-            "INSERT OR IGNORE INTO processes (pid, process_name, up_bps, down_bps, connections, time, block_number) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![process.id, process.name, process.up_bps, process.down_bps, process.connections, current_time, block_number],
-        ) {
-            eprintln!("Failed to insert {} {current_time} {block_number} into processes table: {}",process.id, err);
-        }
-    }
-
-    for connection in connections {
-        // insert into Connections
-        if let Err(err) = conn.execute(
-            "INSERT OR IGNORE INTO connections (cid, source, destination, protocol, up_bps, down_bps, process_name, time, block_number) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![connection.id,
-                    connection.source,
-                    connection.destination,
-                    connection.protocol,
-                    connection.up_bps,
-                    connection.down_bps,
-                    connection.process,
-                    current_time,
-                    block_number],
-        ) {
-            eprintln!("Failed to insert into connections table: {}", err);
-        }
-    }
-
-    for remote_address in remote_addresses {
-        // insert into remote_addresses
-        if let Err(err) = conn.execute(
-            "INSERT OR IGNORE INTO remote_addresses (rid, address, up_bps, down_bps, connections, time, block_number) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![remote_address.id,
-                    remote_address.address,
-                    remote_address.up_bps,
-                    remote_address.down_bps,
-                    remote_address.connections,
-                    current_time,
-                    block_number],
-        ) {
-            eprintln!("Failed to insert into remote_addresses table: {}", err);
-        }
-    }
-}
-
-/*fn listen_for_packets() {
-    let interfaces = datalink::interfaces();
-    // Allow user to select interface
     for (i, interface) in interfaces.iter().enumerate() {
         println!("{}: {:?}", i, interface);
     }
@@ -433,96 +104,61 @@ fn parse_and_save_raw_block(raw_block: &str, block_number: i32) {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input).unwrap();
     let index = input.trim().parse::<usize>().unwrap();
+    let interface_name = &interfaces[index].name;
 
-    let interface = interfaces[index].clone();
+    // make interface_name as Option<&str>
+    let interface_name: Option<&str> = Some(&interface_name);
 
-    let (_tx, mut rx) = match datalink::channel(&interface, Default::default()) {
-        Ok(Ethernet(tx, rx)) => (tx, rx),
-        Ok(_) => panic!("Unhandled channel type"),
-        Err(e) => panic!("An error occurred: {}", e),
-    };
-    let mut count = 0;
-    loop {
-        println!("\nPacket number: {}", count);
-        count += 1;
-        match rx.next() {
-            Ok(packet) => {
-                if let Some(eth) = EthernetPacket::new(packet) {
-                    println!("Ethernet type: {:?}", eth.get_ethertype());
+    // set ip to 127.0.0.53 as Option<Ipv4Addr>
+    let dns_server: Option<Ipv4Addr> = Some(Ipv4Addr::new(127, 0, 0, 53));
 
-                    println!("Source MAC: {:?}", eth.get_source());
-                    println!("Destination MAC: {:?}", eth.get_destination());
+    // create Opt struct with interface_name and dns_server
+    let os_input = os::get_input(interface_name, true, dns_server)?;
 
-                    match eth.get_ethertype() {
-                        EtherTypes::Ipv4 => {
-                            if let Some(ipv4) = Ipv4Packet::new(eth.payload()) {
-                                println!("IPv4 source: {:?}", ipv4.get_source());
-                                println!("IPv4 destination: {:?}", ipv4.get_destination());
-                                println!("IPv4 payload: {:?}", ipv4.payload());
-                            }
+    let running = Arc::new(AtomicBool::new(true));
+    let paused = Arc::new(AtomicBool::new(false));
+    let last_start_time = Arc::new(RwLock::new(Instant::now()));
+    let cumulative_time = Arc::new(RwLock::new(Duration::new(0, 0)));
+    let ui_offset = Arc::new(AtomicUsize::new(0));
+    let dns_shown = true;
+
+    let terminal_events = os_input.terminal_events;
+    let get_open_sockets = os_input.get_open_sockets;
+    let mut write_to_stdout = os_input.write_to_stdout;
+    let mut dns_client = os_input.dns_client;
+
+    let network_utilization = Arc::new(Mutex::new(Utilization::new()));
+
+    let mut active_threads: Vec<_> = vec![];
+    let network_utilization = Arc::new(Mutex::new(Utilization::new()));
+
+    let sniffer_threads = os_input
+        .interfaces_with_frames
+        .into_iter()
+        .map(|(iface, frames)| {
+            let name = format!("sniffing_handler_{}", iface.name);
+            let running = running.clone();
+            let show_dns = true;
+            let network_utilization = network_utilization.clone();
+
+            thread::Builder::new()
+                .name(name)
+                .spawn(move || {
+                    let mut sniffer = Sniffer::new(iface, frames, show_dns);
+
+                    while running.load(Ordering::Acquire) {
+                        if let Some(segment) = sniffer.next() {
+                            network_utilization.lock().unwrap().update(segment);
                         }
-                        EtherTypes::Ipv6 => {
-                            if let Some(ipv6) = Ipv6Packet::new(eth.payload()) {
-                                println!("IPv6 source: {:?}", ipv6.get_source());
-                                println!("IPv6 destination: {:?}", ipv6.get_destination());
-                                println!("IPv6 payload: {:?}", ipv6.payload());
-                            }
-                        }
-                        _ => {}
                     }
-                }
-            }
-            Err(e) => {
-                eprintln!("Error receiving packet: {}", e);
-            }
-        }
+                })
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    active_threads.extend(sniffer_threads);
+
+    for thread_handler in active_threads {
+        thread_handler.join().unwrap()
     }
+    Ok(())
 }
-fn funny_print() {
-    let mut networks = Networks::new_with_refreshed_list();
-    println!("Total information for all interfaces:");
-    print_interfaces_total(&networks);
-    println!("\nAfter 10 seconds:");
-    print_interfaces_after_x(&mut networks, 10);
-}
-
-fn print_interfaces_total(networks: &Networks) {
-    for (interface_name, data) in networks {
-        // print interface name and total data received and transmitted and total packets received and transmitted
-        println!(
-            "{interface_name}: {} B (down) / {} B (up)",
-            data.total_received(),
-            data.total_transmitted()
-        );
-        println!(
-            "{interface_name}: {} packets (down) / {} packets (up)",
-            data.total_packets_received(),
-            data.total_packets_transmitted()
-        );
-    }
-}
-
-fn print_interfaces(networks: &Networks) {
-    for (interface_name, data) in networks {
-        // print interface name and data received and transmitted and packets received and transmitted
-        println!(
-            "{interface_name}: {} B (down) / {} B (up)",
-            data.received(),
-            data.transmitted()
-        );
-        println!(
-            "{interface_name}: {} packets (down) / {} packets (up)",
-            data.packets_received(),
-            data.packets_transmitted()
-        );
-    }
-}
-
-fn print_interfaces_after_x(networks: &mut Networks, x: u64) {
-    std::thread::sleep(std::time::Duration::from_secs(x));
-
-    networks.refresh();
-
-    print_interfaces(networks);
-}
-*/
