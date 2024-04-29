@@ -1,15 +1,30 @@
 // sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep /path/to/bandwhich
+mod dns;
 
-use pnet::datalink::{self /*NetworkInterface*/};
+use pnet::datalink::{self, Channel::Ethernet, Config, DataLinkReceiver, NetworkInterface};
 use rusqlite::{params, Connection /* , Result*/};
-use std::fmt;
-use std::io;
+use std::{
+    collections::HashMap,
+    fmt,
+    io::{self, ErrorKind, Write},
+    net::{IpAddr, Ipv4Addr},
+    time,
+};
 
-use std::collections::HashMap;
+use anyhow::{anyhow, bail};
+use itertools::Itertools;
+use tokio::runtime::Runtime;
 
 use procfs::process::FDTarget;
 
-use std::net::IpAddr;
+//use thiserror::Error;
+
+pub struct OsInputOutput {
+    pub interfaces_with_frames: Vec<(NetworkInterface, Box<dyn DataLinkReceiver>)>,
+    pub get_open_sockets: fn() -> OpenSockets,
+    pub dns_client: Option<dns::Client>,
+    pub write_to_stdout: Box<dyn FnMut(String) + Send>,
+}
 
 #[derive(PartialEq, Hash, Eq, Clone, PartialOrd, Ord, Debug, Copy)]
 pub enum Protocol {
@@ -72,6 +87,14 @@ impl ProcessInfo {
     }
 }
 
+#[derive(Clone, Eq, PartialEq, Debug, thiserror::Error)]
+pub enum GetInterfaceError {
+    #[error("Permission error: {0}")]
+    PermissionError(String),
+    #[error("Other error: {0}")]
+    OtherError(String),
+}
+
 struct Process {
     id: String,
     name: String,
@@ -98,15 +121,15 @@ struct RemoteAddress {
     connections: u32,
 }
 
-fn main() -> io::Result<()> {
+fn main() -> anyhow::Result<()> {
     // Open a connection to the SQLite database, creates if it doesnt exit
     let conn = match Connection::open("data.db") {
         Ok(conn) => conn,
         Err(err) => {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to open SQLite database: {}", err),
-            ));
+            return Err(anyhow::Error::msg(format!(
+                "Failed to open SQLite database: {}",
+                err
+            )));
         }
     };
 
@@ -120,10 +143,10 @@ fn main() -> io::Result<()> {
         )",
         [],
     ) {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to create App table: {}", err),
-        ));
+        return Err(anyhow::Error::msg(format!(
+            "Failed to create App table: {}",
+            err
+        )));
     }
     if let Err(err) = conn.execute(
         "CREATE TABLE IF NOT EXISTS processes (
@@ -139,10 +162,10 @@ fn main() -> io::Result<()> {
         )",
         [],
     ) {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to create processes table: {}", err),
-        ));
+        return Err(anyhow::Error::msg(format!(
+            "Failed to create processes table: {}",
+            err
+        )));
     }
 
     if let Err(err) = conn.execute(
@@ -154,10 +177,10 @@ fn main() -> io::Result<()> {
         )",
         [],
     ) {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to create interfaces table: {}", err),
-        ));
+        return Err(anyhow::Error::msg(format!(
+            "Failed to create interfaces table: {}",
+            err
+        )));
     }
 
     if let Err(err) = conn.execute(
@@ -169,10 +192,10 @@ fn main() -> io::Result<()> {
         )",
         [],
     ) {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to create interfacesIPS table: {}", err),
-        ));
+        return Err(anyhow::Error::msg(format!(
+            "Failed to create interfacesIPS table: {}",
+            err
+        )));
     }
 
     if let Err(err) = conn.execute(
@@ -191,9 +214,7 @@ fn main() -> io::Result<()> {
         )",
         [],
     ) {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to create connections table: {}", err),
+        return Err(anyhow::Error::msg(format!("Failed to create connections table: {}", err),
         ));
     }
 
@@ -210,10 +231,10 @@ fn main() -> io::Result<()> {
         )",
         [],
     ) {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to create remote_addresses table: {}", err),
-        ));
+        return Err(anyhow::Error::msg(format!(
+            "Failed to create remote_addresses table: {}",
+            err
+        )));
     }
 
     // initialize the database with the interfaces
@@ -228,9 +249,7 @@ fn main() -> io::Result<()> {
             "INSERT OR IGNORE INTO interfaces (interface_name, description, mac, flags) VALUES (?1, ?2, ?3, ?4)",
             params![interface.name, interface.description, interface.mac.unwrap().to_string(), interface.flags.to_string()],
         ) {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to insert into interfaces table: {}", err),
+            return Err(anyhow::Error::msg(format!("Failed to insert into interfaces table: {}", err),
             ));
         }
         // insert into interfacesIPS
@@ -239,37 +258,20 @@ fn main() -> io::Result<()> {
                 "INSERT OR IGNORE INTO interfacesIPS (interface_name, ips) VALUES (?1, ?2)",
                 params![interface.name, ip.to_string()],
             ) {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Failed to insert into interfacesIPS table: {}", err),
-                ));
+                return Err(anyhow::Error::msg(format!(
+                    "Failed to insert into interfacesIPS table: {}",
+                    err
+                )));
             }
         }
     }
 
-    // Get the open sockets
-    let open_sockets = get_open_sockets();
+    let osinput = get_input(datalink::interfaces(), None)?;
 
-    // Print the open sockets
-    for (socket, proc_info) in open_sockets.sockets_to_procs {
-        let ip = match socket.ip {
-            IpAddr::V4(ip) => ip.to_string(),
-            IpAddr::V6(ip) => ip.to_string(),
-        };
-        let port = socket.port;
-        let protocol = match socket.protocol {
-            Protocol::Tcp => "TCP",
-            Protocol::Udp => "UDP",
-        };
-        let process_name = proc_info.name;
-        let pid = proc_info.pid;
-
-        println!(
-            "Socket: {}:{} Protocol: {} Process: {} PID: {}",
-            ip, port, protocol, process_name, pid
-        );
-    }
-
+    let numberofinterfaces = osinput.interfaces_with_frames.len();
+    let numberofopensockets = (osinput.get_open_sockets)().sockets_to_procs.len();
+    println!("Number of interfaces: {}", numberofinterfaces);
+    println!("Number of open sockets: {}", numberofopensockets);
     Ok(())
 }
 
@@ -313,4 +315,166 @@ pub fn get_open_sockets() -> OpenSockets {
     OpenSockets {
         sockets_to_procs: open_sockets,
     }
+}
+
+pub fn get_datalink_channel(
+    interface: &NetworkInterface,
+) -> Result<Box<dyn DataLinkReceiver>, GetInterfaceError> {
+    let config = Config {
+        read_timeout: Some(time::Duration::new(1, 0)),
+        read_buffer_size: 65536,
+        ..Default::default()
+    };
+
+    match datalink::channel(interface, config) {
+        Ok(Ethernet(_tx, rx)) => Ok(rx),
+        Ok(_) => Err(GetInterfaceError::OtherError(format!(
+            "{}: Unsupported interface type",
+            interface.name
+        ))),
+        Err(e) => match e.kind() {
+            ErrorKind::PermissionDenied => Err(GetInterfaceError::PermissionError(
+                interface.name.to_owned(),
+            )),
+            _ => Err(GetInterfaceError::OtherError(format!(
+                "{}: {e}",
+                &interface.name
+            ))),
+        },
+    }
+}
+
+fn get_interface(interface_name: &str) -> Option<NetworkInterface> {
+    datalink::interfaces()
+        .into_iter()
+        .find(|iface| iface.name == interface_name)
+}
+
+fn create_write_to_stdout() -> Box<dyn FnMut(String) + Send> {
+    let mut stdout = io::stdout();
+    Box::new({
+        move |output: String| {
+            writeln!(stdout, "{}", output).unwrap();
+        }
+    })
+}
+
+fn eperm_message() -> &'static str {
+    r#"
+    Insufficient permissions to listen on network interface(s). You can work around
+    this issue like this:
+
+    * Try running `rustysnout` with `sudo`
+
+    * Build a `setcap(8)` wrapper for `rustysnout` with the following rules:
+        `cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep`
+    "#
+}
+
+pub fn get_input(
+    interfaces: Vec<NetworkInterface>,
+    dns_server: Option<Ipv4Addr>,
+) -> anyhow::Result<OsInputOutput> {
+    // get the user's requested interface, if any
+    // IDEA: allow requesting multiple interfaces
+
+    // take the user's requested interfaces (or all interfaces), and filter for up ones
+    let available_interfaces = interfaces
+        .into_iter()
+        .filter(|interface| {
+            // see https://github.com/libpnet/libpnet/issues/564
+            let keep = interface.is_up() && !interface.ips.is_empty();
+            if !keep {
+                println!("{} is down. Skipping it.", interface.name);
+            }
+            keep
+        })
+        .collect_vec();
+
+    // bail if no interfaces are up
+    if available_interfaces.is_empty() {
+        bail!("Failed to find any network interface to listen on.");
+    }
+
+    // try to get a frame receiver for each interface
+    let interfaces_with_frames_res = available_interfaces
+        .into_iter()
+        .map(|interface| {
+            let frames_res = get_datalink_channel(&interface);
+            (interface, frames_res)
+        })
+        .collect_vec();
+
+    // warn for all frame receivers we failed to acquire
+    interfaces_with_frames_res
+        .iter()
+        .filter_map(|(interface, frames_res)| frames_res.as_ref().err().map(|err| (interface, err)))
+        .for_each(|(interface, err)| {
+            println!(
+                "Failed to acquire a frame receiver for {}: {err}",
+                interface.name
+            )
+        });
+
+    if interfaces_with_frames_res
+        .iter()
+        .all(|(_, frames)| frames.is_err())
+    {
+        let (permission_err_interfaces, other_errs) = interfaces_with_frames_res.iter().fold(
+            (vec![], vec![]),
+            |(mut perms, mut others), (_, res)| {
+                match res {
+                    Ok(_) => (),
+                    Err(GetInterfaceError::PermissionError(interface)) => {
+                        perms.push(interface.as_str())
+                    }
+                    Err(GetInterfaceError::OtherError(err)) => others.push(err.as_str()),
+                }
+                (perms, others)
+            },
+        );
+
+        let err_msg = match (permission_err_interfaces.is_empty(), other_errs.is_empty()) {
+            (false, false) => format!(
+                "\n\n{}: {}\nAdditional errors:\n{}",
+                permission_err_interfaces.join(", "),
+                eperm_message(),
+                other_errs.join("\n")
+            ),
+            (false, true) => format!(
+                "\n\n{}: {}",
+                permission_err_interfaces.join(", "),
+                eperm_message()
+            ),
+            (true, false) => format!("\n\n{}", other_errs.join("\n")),
+            (true, true) => unreachable!("Found no errors in error handling code path."),
+        };
+        bail!(err_msg);
+    }
+
+    // filter out interfaces for which we failed to acquire a frame receiver
+    let interfaces_with_frames = interfaces_with_frames_res
+        .into_iter()
+        .filter_map(|(interface, res)| res.ok().map(|frames| (interface, frames)))
+        .collect();
+
+    let dns_client = {
+        let runtime = Runtime::new()?;
+        let resolver = runtime
+            .block_on(dns::Resolver::new(dns_server))
+            .map_err(|err| {
+                anyhow!("Could not initialize the DNS resolver. Are you offline?\n\nReason: {err}")
+            })?;
+        let dns_client = dns::Client::new(resolver, runtime)?;
+        Some(dns_client)
+    };
+
+    let write_to_stdout = create_write_to_stdout();
+
+    Ok(OsInputOutput {
+        interfaces_with_frames,
+        get_open_sockets,
+        dns_client,
+        write_to_stdout,
+    })
 }
