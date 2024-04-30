@@ -1,4 +1,4 @@
-// sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep /path/to/bandwhich
+// sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep target/debug/rustysnout
 mod dns;
 mod mystate;
 mod objects;
@@ -265,6 +265,7 @@ fn main() -> anyhow::Result<()> {
                         );
 
                         // SAVE TO SQL DATABASE AND PRINT TO STDOUT PLS
+                        mystate.output_text(&mut write_to_stdout);
                     }
                     let render_duration = render_start_time.elapsed();
                     if render_duration < DISPLAY_DELTA {
