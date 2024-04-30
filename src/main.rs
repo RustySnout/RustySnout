@@ -1,247 +1,33 @@
 // sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep /path/to/bandwhich
 mod dns;
+mod mystate;
+mod objects;
+pub use mystate::*;
+pub use objects::{
+    GetInterfaceError, IpTable, LocalSocket, MyState, OpenSockets, OsInputOutput, ProcessInfo,
+    Protocol, Utilization,
+};
 
 use anyhow::{anyhow, bail};
-use ipnetwork::IpNetwork;
 use itertools::Itertools;
 use pnet::datalink::{self, Channel::Ethernet, Config, DataLinkReceiver, NetworkInterface};
+use procfs::process::FDTarget;
 use rusqlite::{params, Connection as sqlConnection /* , Result*/};
 use std::{
     collections::HashMap,
-    fmt,
     io::{self, ErrorKind, Write},
-    net::{IpAddr, Ipv4Addr, SocketAddr},
+    net::Ipv4Addr,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex, RwLock,
     },
+    thread::{self, park_timeout},
     time::{Duration, Instant},
 };
 use tokio::runtime::Runtime;
 
-use procfs::process::FDTarget;
-
 //use thiserror::Error;
-
-pub struct OsInputOutput {
-    pub interfaces_with_frames: Vec<(NetworkInterface, Box<dyn DataLinkReceiver>)>,
-    pub get_open_sockets: fn() -> OpenSockets,
-    pub dns_client: Option<dns::Client>,
-    pub write_to_stdout: Box<dyn FnMut(String) + Send>,
-}
-
-#[derive(PartialEq, Hash, Eq, Clone, PartialOrd, Ord, Debug, Copy)]
-pub enum Protocol {
-    Tcp,
-    Udp,
-}
-
-impl Protocol {
-    #[allow(dead_code)]
-    pub fn from_str(string: &str) -> Option<Self> {
-        match string {
-            "TCP" => Some(Protocol::Tcp),
-            "UDP" => Some(Protocol::Udp),
-            _ => None,
-        }
-    }
-}
-
-impl fmt::Display for Protocol {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Protocol::Tcp => write!(f, "tcp"),
-            Protocol::Udp => write!(f, "udp"),
-        }
-    }
-}
-
-#[derive(Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Copy)]
-pub struct Socket {
-    pub ip: IpAddr,
-    pub port: u16,
-}
-
-impl fmt::Debug for Socket {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Socket { ip, port } = self;
-        match ip {
-            IpAddr::V4(v4) => write!(f, "{v4}:{port}"),
-            IpAddr::V6(v6) => write!(f, "[{v6}]:{port}"),
-        }
-    }
-}
-
-#[derive(PartialEq, Hash, Eq, Clone, PartialOrd, Ord, Copy)]
-pub struct LocalSocket {
-    pub ip: IpAddr,
-    pub port: u16,
-    pub protocol: Protocol,
-}
-
-impl fmt::Debug for LocalSocket {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let LocalSocket { ip, port, protocol } = self;
-        match ip {
-            IpAddr::V4(v4) => write!(f, "{protocol}://{v4}:{port}"),
-            IpAddr::V6(v6) => write!(f, "{protocol}://[{v6}]:{port}"),
-        }
-    }
-}
-
-#[derive(PartialEq, Hash, Eq, Clone, PartialOrd, Ord, Copy)]
-pub struct Connection {
-    pub remote_socket: Socket,
-    pub local_socket: LocalSocket,
-}
-
-impl fmt::Debug for Connection {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Connection {
-            remote_socket,
-            local_socket,
-        } = self;
-        write!(f, "{local_socket:?} => {remote_socket:?}")
-    }
-}
-
-pub fn display_ip_or_host(ip: IpAddr, ip_to_host: &HashMap<IpAddr, String>) -> String {
-    match ip_to_host.get(&ip) {
-        Some(host) => host.clone(),
-        None => ip.to_string(),
-    }
-}
-
-pub fn display_connection_string(
-    connection: &Connection,
-    ip_to_host: &HashMap<IpAddr, String>,
-    interface_name: &str,
-) -> String {
-    format!(
-        "<{interface_name}>:{} => {}:{} ({})",
-        connection.local_socket.port,
-        display_ip_or_host(connection.remote_socket.ip, ip_to_host),
-        connection.remote_socket.port,
-        connection.local_socket.protocol,
-    )
-}
-
-impl Connection {
-    pub fn new(
-        remote_socket: SocketAddr,
-        local_ip: IpAddr,
-        local_port: u16,
-        protocol: Protocol,
-    ) -> Self {
-        Connection {
-            remote_socket: Socket {
-                ip: remote_socket.ip(),
-                port: remote_socket.port(),
-            },
-            local_socket: LocalSocket {
-                ip: local_ip,
-                port: local_port,
-                protocol,
-            },
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct ConnectionInfo {
-    pub interface_name: String,
-    pub total_bytes_downloaded: u128,
-    pub total_bytes_uploaded: u128,
-}
-
-#[derive(PartialEq, Hash, Eq, Debug, Clone, PartialOrd)]
-pub enum Direction {
-    Download,
-    Upload,
-}
-
-impl Direction {
-    pub fn new(network_interface_ips: &[IpNetwork], source: IpAddr) -> Self {
-        if network_interface_ips
-            .iter()
-            .any(|ip_network| ip_network.ip() == source)
-        {
-            Direction::Upload
-        } else {
-            Direction::Download
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct Segment {
-    pub interface_name: String,
-    pub connection: Connection,
-    pub direction: Direction,
-    pub data_length: u128,
-}
-
-#[derive(Clone)]
-pub struct Utilization {
-    pub connections: HashMap<Connection, ConnectionInfo>,
-}
-
-impl Utilization {
-    pub fn new() -> Self {
-        let connections = HashMap::new();
-        Utilization { connections }
-    }
-    pub fn clone_and_reset(&mut self) -> Self {
-        let clone = self.clone();
-        self.connections.clear();
-        clone
-    }
-    pub fn update(&mut self, seg: Segment) {
-        let total_bandwidth = self
-            .connections
-            .entry(seg.connection)
-            .or_insert(ConnectionInfo {
-                interface_name: seg.interface_name,
-                total_bytes_downloaded: 0,
-                total_bytes_uploaded: 0,
-            });
-        match seg.direction {
-            Direction::Download => {
-                total_bandwidth.total_bytes_downloaded += seg.data_length;
-            }
-            Direction::Upload => {
-                total_bandwidth.total_bytes_uploaded += seg.data_length;
-            }
-        }
-    }
-}
-
-pub struct OpenSockets {
-    sockets_to_procs: HashMap<LocalSocket, ProcessInfo>,
-}
-
-#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
-pub struct ProcessInfo {
-    pub name: String,
-    pub pid: u32,
-}
-impl ProcessInfo {
-    pub fn new(name: &str, pid: u32) -> Self {
-        Self {
-            name: name.to_string(),
-            pid,
-        }
-    }
-}
-
-#[derive(Clone, Eq, PartialEq, Debug, thiserror::Error)]
-pub enum GetInterfaceError {
-    #[error("Permission error: {0}")]
-    PermissionError(String),
-    #[error("Other error: {0}")]
-    OtherError(String),
-}
-
+const DISPLAY_DELTA: Duration = Duration::from_millis(1000);
 struct Process {
     id: String,
     name: String,
@@ -419,7 +205,7 @@ fn main() -> anyhow::Result<()> {
     let paused = Arc::new(AtomicBool::new(false));
     let last_start_time = Arc::new(RwLock::new(Instant::now()));
     let cumulative_time = Arc::new(RwLock::new(Duration::new(0, 0)));
-    //let ui_offset = Arc::new(AtomicUsize::new(0));
+    let state_offset = Arc::new(AtomicUsize::new(0));
     let dns_shown = true;
 
     let mut active_threads = vec![];
@@ -429,6 +215,66 @@ fn main() -> anyhow::Result<()> {
     let mut dns_client = os_input.dns_client;
 
     let network_utilization = Arc::new(Mutex::new(Utilization::new()));
+    let mystate = Arc::new(Mutex::new(MyState::new()));
+
+    // NEED UI
+
+    let display_handler = thread::Builder::new()
+        .name("display_handler".to_string())
+        .spawn({
+            let running = running.clone();
+            let paused = paused.clone();
+            let state_offset = state_offset.clone();
+
+            let network_utilization = network_utilization.clone();
+            let last_start_time = last_start_time.clone();
+            let cumulative_time = cumulative_time.clone();
+            let mystate = mystate.clone();
+
+            move || {
+                while running.load(Ordering::Acquire) {
+                    let render_start_time = Instant::now();
+                    let utilization = { network_utilization.lock().unwrap().clone_and_reset() };
+                    let OpenSockets { sockets_to_procs } = get_open_sockets();
+
+                    // Attempt to resolve IPs to hostnames
+                    let mut ip_to_host = IpTable::new();
+                    if let Some(dns_client) = dns_client.as_mut() {
+                        ip_to_host = dns_client.cache();
+                        let unresolved_ips = utilization
+                            .connections
+                            .keys()
+                            .filter(|conn| !ip_to_host.contains_key(&conn.remote_socket.ip))
+                            .map(|conn| conn.remote_socket.ip)
+                            .collect::<Vec<_>>();
+                        dns_client.resolve(unresolved_ips);
+                    }
+                    {
+                        let mut mystate = mystate.lock().unwrap();
+                        let paused = paused.load(Ordering::SeqCst);
+                        let state_offset = state_offset.load(Ordering::SeqCst);
+                        if !paused {
+                            mystate.update_state(sockets_to_procs, utilization, ip_to_host);
+                        }
+                        let elapsed_time = elapsed_time(
+                            *last_start_time.read().unwrap(),
+                            *cumulative_time.read().unwrap(),
+                            paused,
+                        );
+
+                        // SAVE TO SQL DATABASE AND PRINT TO STDOUT PLS
+                    }
+                    let render_duration = render_start_time.elapsed();
+                    if render_duration < DISPLAY_DELTA {
+                        park_timeout(DISPLAY_DELTA - render_duration);
+                    }
+                }
+            }
+        })
+        .unwrap();
+
+    active_threads.push(display_handler);
+    // TODO: do we need terminal event handler?
 
     Ok(())
 }
@@ -635,4 +481,12 @@ pub fn get_input(
         dns_client,
         write_to_stdout,
     })
+}
+
+pub fn elapsed_time(last_start_time: Instant, cumulative_time: Duration, paused: bool) -> Duration {
+    if paused {
+        cumulative_time
+    } else {
+        cumulative_time + last_start_time.elapsed()
+    }
 }
