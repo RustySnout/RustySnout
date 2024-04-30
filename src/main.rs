@@ -1,18 +1,22 @@
 // sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep /path/to/bandwhich
 mod dns;
 
+use anyhow::{anyhow, bail};
+use ipnetwork::IpNetwork;
+use itertools::Itertools;
 use pnet::datalink::{self, Channel::Ethernet, Config, DataLinkReceiver, NetworkInterface};
-use rusqlite::{params, Connection /* , Result*/};
+use rusqlite::{params, Connection as sqlConnection /* , Result*/};
 use std::{
     collections::HashMap,
     fmt,
     io::{self, ErrorKind, Write},
-    net::{IpAddr, Ipv4Addr},
-    time,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Mutex, RwLock,
+    },
+    time::{Duration, Instant},
 };
-
-use anyhow::{anyhow, bail};
-use itertools::Itertools;
 use tokio::runtime::Runtime;
 
 use procfs::process::FDTarget;
@@ -52,6 +56,22 @@ impl fmt::Display for Protocol {
     }
 }
 
+#[derive(Clone, Ord, PartialOrd, PartialEq, Eq, Hash, Copy)]
+pub struct Socket {
+    pub ip: IpAddr,
+    pub port: u16,
+}
+
+impl fmt::Debug for Socket {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Socket { ip, port } = self;
+        match ip {
+            IpAddr::V4(v4) => write!(f, "{v4}:{port}"),
+            IpAddr::V6(v6) => write!(f, "[{v6}]:{port}"),
+        }
+    }
+}
+
 #[derive(PartialEq, Hash, Eq, Clone, PartialOrd, Ord, Copy)]
 pub struct LocalSocket {
     pub ip: IpAddr,
@@ -65,6 +85,133 @@ impl fmt::Debug for LocalSocket {
         match ip {
             IpAddr::V4(v4) => write!(f, "{protocol}://{v4}:{port}"),
             IpAddr::V6(v6) => write!(f, "{protocol}://[{v6}]:{port}"),
+        }
+    }
+}
+
+#[derive(PartialEq, Hash, Eq, Clone, PartialOrd, Ord, Copy)]
+pub struct Connection {
+    pub remote_socket: Socket,
+    pub local_socket: LocalSocket,
+}
+
+impl fmt::Debug for Connection {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Connection {
+            remote_socket,
+            local_socket,
+        } = self;
+        write!(f, "{local_socket:?} => {remote_socket:?}")
+    }
+}
+
+pub fn display_ip_or_host(ip: IpAddr, ip_to_host: &HashMap<IpAddr, String>) -> String {
+    match ip_to_host.get(&ip) {
+        Some(host) => host.clone(),
+        None => ip.to_string(),
+    }
+}
+
+pub fn display_connection_string(
+    connection: &Connection,
+    ip_to_host: &HashMap<IpAddr, String>,
+    interface_name: &str,
+) -> String {
+    format!(
+        "<{interface_name}>:{} => {}:{} ({})",
+        connection.local_socket.port,
+        display_ip_or_host(connection.remote_socket.ip, ip_to_host),
+        connection.remote_socket.port,
+        connection.local_socket.protocol,
+    )
+}
+
+impl Connection {
+    pub fn new(
+        remote_socket: SocketAddr,
+        local_ip: IpAddr,
+        local_port: u16,
+        protocol: Protocol,
+    ) -> Self {
+        Connection {
+            remote_socket: Socket {
+                ip: remote_socket.ip(),
+                port: remote_socket.port(),
+            },
+            local_socket: LocalSocket {
+                ip: local_ip,
+                port: local_port,
+                protocol,
+            },
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ConnectionInfo {
+    pub interface_name: String,
+    pub total_bytes_downloaded: u128,
+    pub total_bytes_uploaded: u128,
+}
+
+#[derive(PartialEq, Hash, Eq, Debug, Clone, PartialOrd)]
+pub enum Direction {
+    Download,
+    Upload,
+}
+
+impl Direction {
+    pub fn new(network_interface_ips: &[IpNetwork], source: IpAddr) -> Self {
+        if network_interface_ips
+            .iter()
+            .any(|ip_network| ip_network.ip() == source)
+        {
+            Direction::Upload
+        } else {
+            Direction::Download
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Segment {
+    pub interface_name: String,
+    pub connection: Connection,
+    pub direction: Direction,
+    pub data_length: u128,
+}
+
+#[derive(Clone)]
+pub struct Utilization {
+    pub connections: HashMap<Connection, ConnectionInfo>,
+}
+
+impl Utilization {
+    pub fn new() -> Self {
+        let connections = HashMap::new();
+        Utilization { connections }
+    }
+    pub fn clone_and_reset(&mut self) -> Self {
+        let clone = self.clone();
+        self.connections.clear();
+        clone
+    }
+    pub fn update(&mut self, seg: Segment) {
+        let total_bandwidth = self
+            .connections
+            .entry(seg.connection)
+            .or_insert(ConnectionInfo {
+                interface_name: seg.interface_name,
+                total_bytes_downloaded: 0,
+                total_bytes_uploaded: 0,
+            });
+        match seg.direction {
+            Direction::Download => {
+                total_bandwidth.total_bytes_downloaded += seg.data_length;
+            }
+            Direction::Upload => {
+                total_bandwidth.total_bytes_uploaded += seg.data_length;
+            }
         }
     }
 }
@@ -123,7 +270,7 @@ struct RemoteAddress {
 
 fn main() -> anyhow::Result<()> {
     // Open a connection to the SQLite database, creates if it doesnt exit
-    let conn = match Connection::open("data.db") {
+    let conn = match sqlConnection::open("data.db") {
         Ok(conn) => conn,
         Err(err) => {
             return Err(anyhow::Error::msg(format!(
@@ -266,12 +413,23 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    let osinput = get_input(datalink::interfaces(), None)?;
+    let os_input = get_input(datalink::interfaces(), None)?;
 
-    let numberofinterfaces = osinput.interfaces_with_frames.len();
-    let numberofopensockets = (osinput.get_open_sockets)().sockets_to_procs.len();
-    println!("Number of interfaces: {}", numberofinterfaces);
-    println!("Number of open sockets: {}", numberofopensockets);
+    let running = Arc::new(AtomicBool::new(true));
+    let paused = Arc::new(AtomicBool::new(false));
+    let last_start_time = Arc::new(RwLock::new(Instant::now()));
+    let cumulative_time = Arc::new(RwLock::new(Duration::new(0, 0)));
+    //let ui_offset = Arc::new(AtomicUsize::new(0));
+    let dns_shown = true;
+
+    let mut active_threads = vec![];
+
+    let get_open_sockets = os_input.get_open_sockets;
+    let mut write_to_stdout = os_input.write_to_stdout;
+    let mut dns_client = os_input.dns_client;
+
+    let network_utilization = Arc::new(Mutex::new(Utilization::new()));
+
     Ok(())
 }
 
@@ -321,7 +479,7 @@ pub fn get_datalink_channel(
     interface: &NetworkInterface,
 ) -> Result<Box<dyn DataLinkReceiver>, GetInterfaceError> {
     let config = Config {
-        read_timeout: Some(time::Duration::new(1, 0)),
+        read_timeout: Some(Duration::new(1, 0)),
         read_buffer_size: 65536,
         ..Default::default()
     };
