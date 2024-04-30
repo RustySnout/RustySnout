@@ -3,9 +3,16 @@ use crate::mystate::MYState;
 use clap::ValueEnum;
 use derivative::Derivative;
 use ipnetwork::IpNetwork;
-use pnet::datalink::{DataLinkReceiver, NetworkInterface};
-use std::{collections::HashMap, fmt, net::IpAddr, net::SocketAddr};
+use pnet::datalink::{self, Channel::Ethernet, Config, DataLinkReceiver, NetworkInterface};
+use std::{
+    collections::HashMap,
+    fmt,
+    io::ErrorKind,
+    net::{IpAddr, SocketAddr},
+    time::Duration,
+};
 use strum::EnumIter;
+
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, ValueEnum, EnumIter)]
 pub enum UnitFamily {
     #[default]
@@ -338,5 +345,32 @@ impl BandwidthUnitFamily {
         };
 
         (div, suffix)
+    }
+}
+
+pub fn get_datalink_channel(
+    interface: &NetworkInterface,
+) -> Result<Box<dyn DataLinkReceiver>, GetInterfaceError> {
+    let config = Config {
+        read_timeout: Some(Duration::new(1, 0)),
+        read_buffer_size: 65536,
+        ..Default::default()
+    };
+
+    match datalink::channel(interface, config) {
+        Ok(Ethernet(_tx, rx)) => Ok(rx),
+        Ok(_) => Err(GetInterfaceError::OtherError(format!(
+            "{}: Unsupported interface type",
+            interface.name
+        ))),
+        Err(e) => match e.kind() {
+            ErrorKind::PermissionDenied => Err(GetInterfaceError::PermissionError(
+                interface.name.to_owned(),
+            )),
+            _ => Err(GetInterfaceError::OtherError(format!(
+                "{}: {e}",
+                &interface.name
+            ))),
+        },
     }
 }

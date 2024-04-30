@@ -2,11 +2,13 @@
 mod dns;
 mod mystate;
 mod objects;
+mod sniffer;
 pub use mystate::*;
 pub use objects::{
     GetInterfaceError, IpTable, LocalSocket, MyState, OpenSockets, OsInputOutput, ProcessInfo,
     Protocol, Utilization,
 };
+use sniffer::Sniffer;
 
 use anyhow::{anyhow, bail};
 use itertools::Itertools;
@@ -275,6 +277,35 @@ fn main() -> anyhow::Result<()> {
 
     active_threads.push(display_handler);
     // TODO: do we need terminal event handler?
+
+    let sniffer_threads = os_input
+        .interfaces_with_frames
+        .into_iter()
+        .map(|(iface, frames)| {
+            let name = format!("sniffing_handler_{}", iface.name);
+            let running = running.clone();
+            let show_dns = true;
+            let network_utilization = network_utilization.clone();
+
+            thread::Builder::new()
+                .name(name)
+                .spawn(move || {
+                    let mut sniffer = Sniffer::new(iface, frames, show_dns);
+
+                    while running.load(Ordering::Acquire) {
+                        if let Some(segment) = sniffer.next() {
+                            network_utilization.lock().unwrap().update(segment);
+                        }
+                    }
+                })
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    active_threads.extend(sniffer_threads);
+
+    for thread_handler in active_threads {
+        thread_handler.join().unwrap()
+    }
 
     Ok(())
 }
