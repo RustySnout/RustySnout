@@ -30,31 +30,6 @@ use tokio::runtime::Runtime;
 
 //use thiserror::Error;
 const DISPLAY_DELTA: Duration = Duration::from_millis(1000);
-struct Process {
-    id: String,
-    name: String,
-    up_bps: u64,
-    down_bps: u64,
-    connections: u32,
-}
-
-struct NetwrokConnection {
-    id: String,
-    source: String,
-    destination: String,
-    protocol: String,
-    up_bps: u64,
-    down_bps: u64,
-    process: String,
-}
-
-struct RemoteAddress {
-    id: String,
-    address: String,
-    up_bps: u64,
-    down_bps: u64,
-    connections: u32,
-}
 
 fn main() -> anyhow::Result<()> {
     // Open a connection to the SQLite database, creates if it doesnt exit
@@ -74,7 +49,7 @@ fn main() -> anyhow::Result<()> {
             process_name TEXT,
             time INTEGER DEFAULT CURRENT_TIMESTAMP,
             block_number INTEGER,
-            constraint pk_app primary key (process_name, time, block_number)
+            constraint pk_app primary key (process_name, block_number)
         )",
         [],
     ) {
@@ -92,7 +67,7 @@ fn main() -> anyhow::Result<()> {
             connections INTEGER,
             time INTEGER DEFAULT CURRENT_TIMESTAMP,
             block_number INTEGER,
-            constraint pk_processes primary key (pid, time, block_number),
+            constraint pk_processes primary key (pid, block_number),
             constraint fk_processes_name foreign key (process_name) references App (process_name)
         )",
         [],
@@ -144,7 +119,7 @@ fn main() -> anyhow::Result<()> {
             process_name TEXT,
             time INTEGER DEFAULT CURRENT_TIMESTAMP,
             block_number INTEGER,
-            CONSTRAINT pk_connections PRIMARY KEY (cid, time, block_number),
+            CONSTRAINT pk_connections PRIMARY KEY (cid, block_number),
             CONSTRAINT fk_connections_source FOREIGN KEY (source) REFERENCES interfaces (interface_name)
         )",
         [],
@@ -162,7 +137,7 @@ fn main() -> anyhow::Result<()> {
             connections INTEGER,
             time INTEGER DEFAULT CURRENT_TIMESTAMP,
             block_number INTEGER,
-            constraint pk_remote_addresses primary key (rid, time, block_number)
+            constraint pk_remote_addresses primary key (rid, block_number)
         )",
         [],
     ) {
@@ -208,7 +183,6 @@ fn main() -> anyhow::Result<()> {
     let last_start_time = Arc::new(RwLock::new(Instant::now()));
     let cumulative_time = Arc::new(RwLock::new(Duration::new(0, 0)));
     let state_offset = Arc::new(AtomicUsize::new(0));
-    let dns_shown = true;
 
     let mut active_threads = vec![];
 
@@ -264,7 +238,7 @@ fn main() -> anyhow::Result<()> {
                             paused,
                         );
 
-                        // SAVE TO SQL DATABASE AND PRINT TO STDOUT PLS
+                        // TODO: SAVE TO SQL DATABASE AND PRINT TO STDOUT PLS
                         mystate.output_text(&mut write_to_stdout);
                     }
                     let render_duration = render_start_time.elapsed();
@@ -380,11 +354,11 @@ pub fn get_datalink_channel(
     }
 }
 
-fn get_interface(interface_name: &str) -> Option<NetworkInterface> {
-    datalink::interfaces()
-        .into_iter()
-        .find(|iface| iface.name == interface_name)
-}
+// fn get_interface(interface_name: &str) -> Option<NetworkInterface> {
+//     datalink::interfaces()
+//         .into_iter()
+//         .find(|iface| iface.name == interface_name)
+// }
 
 fn create_write_to_stdout() -> Box<dyn FnMut(String) + Send> {
     let mut stdout = io::stdout();

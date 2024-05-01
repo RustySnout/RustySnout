@@ -5,6 +5,7 @@ use clap::ValueEnum;
 use derivative::Derivative;
 use ipnetwork::IpNetwork;
 use pnet::datalink::{self, Channel::Ethernet, Config, DataLinkReceiver, NetworkInterface};
+use rusqlite::{params, Connection as sqlConnection /* , Result*/};
 use std::{
     collections::HashMap,
     fmt,
@@ -26,10 +27,47 @@ pub enum UnitFamily {
     /// bits, in powers of 10^3
     SiBits,
 }
+// struct App {
+//     process_name: String,
+//     time: i64,
+//     block_number: i64,
+// }
+struct Process {
+    pid: String,
+    process_name: String,
+    up_bps: u128,
+    down_bps: u128,
+    connections: u128,
+    time: i64,
+    block_number: i64,
+}
+
+struct NetwrokConnection {
+    cid: String,
+    source: String,
+    destination: String,
+    protocol: String,
+    up_bps: u128,
+    down_bps: u128,
+    process_name: String,
+    time: i64,
+    block_number: i64,
+}
+
+struct RemoteAddress {
+    rid: String,
+    address: String,
+    up_bps: u128,
+    down_bps: u128,
+    connections: u128,
+    time: i64,
+    block_number: i64,
+}
 
 pub struct MyState {
     state: MYState, // TODO: Do we need this? wait for weso
     ip_to_host: HashMap<IpAddr, String>,
+    block_number: i64,
 }
 
 impl MyState {
@@ -44,6 +82,7 @@ impl MyState {
         MyState {
             state,
             ip_to_host: HashMap::new(),
+            block_number: 0,
         }
     }
     pub fn output_text(&mut self, write_to_stdout: &mut (dyn FnMut(String) + Send)) {
@@ -53,67 +92,136 @@ impl MyState {
         let timestamp = local_time.timestamp();
         let mut no_traffic = true;
 
-        let output_process_data = |write_to_stdout: &mut (dyn FnMut(String) + Send),
-                                   no_traffic: &mut bool| {
-            for (proc_info, process_network_data) in &state.processes {
-                write_to_stdout(format!(
-                    "process: <{timestamp}> \"{}\" up/down Bps: {}/{} connections: {}",
-                    proc_info.name,
-                    process_network_data.total_bytes_uploaded,
-                    process_network_data.total_bytes_downloaded,
-                    process_network_data.connection_count
-                ));
-                *no_traffic = false;
+        let mut processes: Vec<Process> = Vec::new();
+        let mut connections: Vec<NetwrokConnection> = Vec::new();
+        let mut remote_addresses: Vec<RemoteAddress> = Vec::new();
+
+        let conn = match sqlConnection::open("data.db") {
+            Ok(conn) => conn,
+            Err(err) => {
+                eprintln!("Failed to open SQLite database: {}", err);
+                return;
             }
         };
-
-        let output_connections_data =
-            |write_to_stdout: &mut (dyn FnMut(String) + Send), no_traffic: &mut bool| {
-                for (connection, connection_network_data) in &state.connections {
-                    write_to_stdout(format!(
-                        "connection: <{timestamp}> {} up/down Bps: {}/{} process: \"{}\"",
-                        display_connection_string(
-                            connection,
-                            ip_to_host,
-                            &connection_network_data.interface_name,
-                        ),
-                        connection_network_data.total_bytes_uploaded,
-                        connection_network_data.total_bytes_downloaded,
-                        connection_network_data.process_name
-                    ));
-                    *no_traffic = false;
-                }
-            };
-
-        let output_adressess_data = |write_to_stdout: &mut (dyn FnMut(String) + Send),
-                                     no_traffic: &mut bool| {
-            for (remote_address, remote_address_network_data) in &state.remote_addresses {
-                write_to_stdout(format!(
-                    "remote_address: <{timestamp}> {} up/down Bps: {}/{} connections: {}",
-                    display_ip_or_host(*remote_address, ip_to_host),
-                    remote_address_network_data.total_bytes_uploaded,
-                    remote_address_network_data.total_bytes_downloaded,
-                    remote_address_network_data.connection_count
-                ));
-                *no_traffic = false;
-            }
-        };
-
-        // header
         write_to_stdout("Refreshing:".into());
 
-        // body1
-        output_process_data(write_to_stdout, &mut no_traffic);
-        output_connections_data(write_to_stdout, &mut no_traffic);
-        output_adressess_data(write_to_stdout, &mut no_traffic);
+        for (proc_info, process_network_data) in &state.processes {
+            write_to_stdout(format!(
+                "process: <{timestamp}> \"{}\" up/down Bps: {}/{} connections: {}",
+                proc_info.name,
+                process_network_data.total_bytes_uploaded,
+                process_network_data.total_bytes_downloaded,
+                process_network_data.connection_count
+            ));
+            no_traffic = false;
+
+            let process = Process {
+                pid: proc_info.pid.to_string(),
+                process_name: proc_info.name.to_string(),
+                up_bps: process_network_data.total_bytes_uploaded,
+                down_bps: process_network_data.total_bytes_downloaded,
+                connections: process_network_data.connection_count,
+                time: timestamp,
+                block_number: self.block_number,
+            };
+            processes.push(process);
+        }
+
+        for (connection, connection_network_data) in &state.connections {
+            write_to_stdout(format!(
+                "connection: <{timestamp}> {} up/down Bps: {}/{} process: \"{}\"",
+                display_connection_string(
+                    connection,
+                    ip_to_host,
+                    &connection_network_data.interface_name,
+                ),
+                connection_network_data.total_bytes_uploaded,
+                connection_network_data.total_bytes_downloaded,
+                connection_network_data.process_name
+            ));
+            no_traffic = false;
+
+            let conn = NetwrokConnection {
+                cid: format!("{:?}", connection),
+                source: format!("{:?}", connection.local_socket),
+                destination: format!("{:?}", connection.remote_socket),
+                protocol: format!("{:?}", connection.local_socket.protocol),
+                up_bps: connection_network_data.total_bytes_uploaded,
+                down_bps: connection_network_data.total_bytes_downloaded,
+                process_name: connection_network_data.process_name.clone(),
+                time: timestamp,
+                block_number: self.block_number,
+            };
+
+            connections.push(conn);
+        }
+
+        for (remote_address, remote_address_network_data) in &state.remote_addresses {
+            write_to_stdout(format!(
+                "remote_address: <{timestamp}> {} up/down Bps: {}/{} connections: {}",
+                display_ip_or_host(*remote_address, ip_to_host),
+                remote_address_network_data.total_bytes_uploaded,
+                remote_address_network_data.total_bytes_downloaded,
+                remote_address_network_data.connection_count
+            ));
+            no_traffic = false;
+
+            let remote_address = RemoteAddress {
+                rid: remote_address.to_string(),
+                address: display_ip_or_host(*remote_address, ip_to_host),
+                up_bps: remote_address_network_data.total_bytes_uploaded,
+                down_bps: remote_address_network_data.total_bytes_downloaded,
+                connections: remote_address_network_data.connection_count,
+                time: timestamp,
+                block_number: self.block_number,
+            };
+
+            remote_addresses.push(remote_address);
+        }
 
         // body2: In case no traffic is detected
         if no_traffic {
             write_to_stdout("<NO TRAFFIC>".into());
         }
 
-        // footer
         write_to_stdout("".into());
+
+        // Inserting data into the database
+        for process in processes {
+            if let Err(err) = conn.execute(
+                "INSERT OR IGNORE INTO App (process_name, time, block_number) VALUES (?1, ?2, ?3)",
+                params![process.process_name, process.time, process.block_number],
+            ) {
+                eprintln!("Failed to insert into App table: {}", err);
+            }
+
+            if let Err(err) = conn.execute(
+                "INSERT OR IGNORE INTO processes (pid, process_name, up_bps, down_bps, connections, time, block_number) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![process.pid, process.process_name, process.up_bps as i64, process.down_bps as i64, process.connections as i64, process.time, process.block_number],
+            ) {
+                eprintln!("Failed to insert {} {} {} into processes table: {}",process.pid,process.process_name, process.block_number, err);
+            }
+        }
+
+        for connection in connections {
+            if let Err(err) = conn.execute(
+                "INSERT OR IGNORE INTO connections (cid, source, destination, protocol, up_bps, down_bps, process_name, time, block_number) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![connection.cid, connection.source, connection.destination, connection.protocol, connection.up_bps as i64, connection.down_bps as i64, connection.process_name, connection.time, connection.block_number],
+            ) {
+                eprintln!("Failed to insert into NetworkConnection table: {}", err);
+            }
+        }
+
+        for remote_address in remote_addresses {
+            if let Err(err) = conn.execute(
+                "INSERT OR IGNORE INTO remote_addresses (rid, address, up_bps, down_bps, connections, time, block_number) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![remote_address.rid, remote_address.address, remote_address.up_bps as i64, remote_address.down_bps as i64, remote_address.connections as i64, remote_address.time, remote_address.block_number],
+            ) {
+                eprintln!("Failed to insert into RemoteAddress table: {}", err);
+            }
+        }
+
+        self.block_number += 1;
     }
     pub fn update_state(
         &mut self,
