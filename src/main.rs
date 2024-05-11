@@ -1,498 +1,229 @@
-// sudo setcap cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep target/debug/rustysnout
-mod dns;
-mod mystate;
-mod objects;
-mod sniffer;
-pub use mystate::*;
-pub use objects::{
-    GetInterfaceError, IpTable, LocalSocket, MyState, OpenSockets, OsInputOutput, ProcessInfo,
-    Protocol, Utilization,
-};
-use sniffer::Sniffer;
+use gtk::builders::ConstraintBuilder;
+use gtk::gio::ffi::GOutputVector;
 
-use anyhow::{anyhow, bail};
-use itertools::Itertools;
-use pnet::datalink::{self, Channel::Ethernet, Config, DataLinkReceiver, NetworkInterface};
-use procfs::process::FDTarget;
-use rusqlite::{params, Connection as sqlConnection /* , Result*/};
-use std::{
-    collections::HashMap,
-    io::{self, ErrorKind, Write},
-    net::Ipv4Addr,
-    sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc, Mutex, RwLock,
-    },
-    thread::{self, park_timeout},
-    time::{Duration, Instant},
-};
-use tokio::runtime::Runtime;
+use rusqlite::{Connection, Result};
 
-//use thiserror::Error;
-const DISPLAY_DELTA: Duration = Duration::from_millis(1000);
+use gtk::ffi::gtk_grid_remove_row;
+use gtk::prelude::*;
+use gtk::{Application, ApplicationWindow, Button, Label, Box, Orientation, Entry, CssProvider, StyleContext, Align, Grid};
+use gtk::gdk;
 
-fn main() -> anyhow::Result<()> {
-    // Open a connection to the SQLite database, creates if it doesnt exit
-    let conn = match sqlConnection::open("data.db") {
-        Ok(conn) => conn,
-        Err(err) => {
-            return Err(anyhow::Error::msg(format!(
-                "Failed to open SQLite database: {}",
-                err
-            )));
-        }
-    };
+use std::sync::{Arc, Mutex};
+    
+fn main() -> Result<()> {
+    let app = Application::new(Some("com.example.RustySnout"), Default::default());
+    
+    let conn = Connection::open("data.db")?;
+   let mut stmt = conn.prepare("SELECT process_name, time, block_number FROM App WHERE block_number = (SELECT MAX(block_number) FROM App)")?;
+let mut stmt2 = conn.prepare("SELECT pid, process_name, up_bps, down_bps, connections, time, block_number FROM processes WHERE block_number = (SELECT MAX(block_number) FROM processes)")?;
+let mut stmt3 = conn.prepare("SELECT cid, source, destination, protocol, up_bps, down_bps, process_name, time, block_number FROM connections WHERE block_number = (SELECT MAX(block_number) FROM connections)")?;
 
-    // Create the tables if they don't exist
-    if let Err(err) = conn.execute(
-        "CREATE TABLE IF NOT EXISTS App (
-            process_name TEXT,
-            time INTEGER DEFAULT CURRENT_TIMESTAMP,
-            block_number INTEGER,
-            constraint pk_app primary key (process_name, block_number)
-        )",
-        [],
-    ) {
-        return Err(anyhow::Error::msg(format!(
-            "Failed to create App table: {}",
-            err
-        )));
-    }
-    if let Err(err) = conn.execute(
-        "CREATE TABLE IF NOT EXISTS processes (
-            pid INTEGER,
-            process_name TEXT,
-            up_bps INTEGER,
-            down_bps INTEGER,
-            connections INTEGER,
-            time INTEGER DEFAULT CURRENT_TIMESTAMP,
-            block_number INTEGER,
-            constraint pk_processes primary key (pid, block_number),
-            constraint fk_processes_name foreign key (process_name) references App (process_name)
-        )",
-        [],
-    ) {
-        return Err(anyhow::Error::msg(format!(
-            "Failed to create processes table: {}",
-            err
-        )));
+    let mut data1: Vec<Vec<String>> = Vec::new();
+    let mut data2: Vec<Vec<String>> = Vec::new();
+    let mut data3: Vec<Vec<String>> = Vec::new();    
+
+    let rows = stmt.query_map([], |row| {
+        Ok(vec![
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?.to_string(),
+            row.get::<_, i64>(2)?.to_string(),
+        ])
+    })?;
+    for row in rows {
+        data1.push(row?);
     }
 
-    if let Err(err) = conn.execute(
-        "CREATE TABLE IF NOT EXISTS interfaces (
-            interface_name TEXT PRIMARY KEY,
-            description TEXT,
-            mac TEXT,
-            flags TEXT
-        )",
-        [],
-    ) {
-        return Err(anyhow::Error::msg(format!(
-            "Failed to create interfaces table: {}",
-            err
-        )));
+    let rows2 = stmt2.query_map([], |row| {
+        Ok(vec![
+            row.get::<_, i64>(0)?.to_string(),
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?.to_string(),
+            row.get::<_, i64>(3)?.to_string(),
+            row.get::<_, i64>(4)?.to_string(),
+            row.get::<_, i64>(5)?.to_string(),
+            row.get::<_, i64>(6)?.to_string(),
+        ])
+    })?;
+    
+    for row in rows2 {
+        data2.push(row?);
     }
 
-    if let Err(err) = conn.execute(
-        "CREATE TABLE IF NOT EXISTS interfacesIPS (
-            interface_name TEXT,
-            ips TEXT,
-            FOREIGN KEY (interface_name) REFERENCES interfaces (interface_name),
-            PRIMARY KEY (interface_name, ips)
-        )",
-        [],
-    ) {
-        return Err(anyhow::Error::msg(format!(
-            "Failed to create interfacesIPS table: {}",
-            err
-        )));
+    let rows3 = stmt3.query_map([], |row| {
+        Ok(vec![
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, i64>(4)?.to_string(),
+            row.get::<_, i64>(5)?.to_string(),
+            row.get::<_, String>(6)?,
+            row.get::<_, i64>(7)?.to_string(),
+            row.get::<_, i64>(8)?.to_string(),
+        ])
+    })?;
+
+    for row in rows3 {
+        data3.push(row?);      
     }
 
-    if let Err(err) = conn.execute(
-        "CREATE TABLE IF NOT EXISTS connections (
-            cid INTEGER,
-            source TEXT,
-            destination TEXT,
-            protocol TEXT,
-            up_bps INTEGER,
-            down_bps INTEGER,
-            process_name TEXT,
-            time INTEGER DEFAULT CURRENT_TIMESTAMP,
-            block_number INTEGER,
-            CONSTRAINT pk_connections PRIMARY KEY (cid, block_number),
-            CONSTRAINT fk_connections_source FOREIGN KEY (source) REFERENCES interfaces (interface_name)
-        )",
-        [],
-    ) {
-        return Err(anyhow::Error::msg(format!("Failed to create connections table: {}", err),
-        ));
-    }
+    app.connect_activate(move |app| {
+       let shared_content1 = Arc::new(Mutex::new(data1.clone()));
+       let shared_content2 = Arc::new(Mutex::new(data2.clone()));
+       let shared_content3 = Arc::new(Mutex::new(data3.clone()));        
+        build_ui(app, shared_content1.clone(),shared_content2.clone(),shared_content3.clone());
+    });
 
-    if let Err(err) = conn.execute(
-        "CREATE TABLE IF NOT EXISTS remote_addresses (
-            rid INTEGER,
-            address TEXT,
-            up_bps INTEGER,
-            down_bps INTEGER,
-            connections INTEGER,
-            time INTEGER DEFAULT CURRENT_TIMESTAMP,
-            block_number INTEGER,
-            constraint pk_remote_addresses primary key (rid, block_number)
-        )",
-        [],
-    ) {
-        return Err(anyhow::Error::msg(format!(
-            "Failed to create remote_addresses table: {}",
-            err
-        )));
-    }
-
-    // initialize the database with the interfaces
-    let interfaces = datalink::interfaces();
-    // Allow user to select interface
-    for (i, interface) in interfaces.iter().enumerate() {
-        println!("{}: {:?}", i, interface);
-    }
-
-    for interface in interfaces {
-        if let Err(err) = conn.execute(
-            "INSERT OR IGNORE INTO interfaces (interface_name, description, mac, flags) VALUES (?1, ?2, ?3, ?4)",
-            params![interface.name, interface.description, interface.mac.unwrap().to_string(), interface.flags.to_string()],
-        ) {
-            return Err(anyhow::Error::msg(format!("Failed to insert into interfaces table: {}", err),
-            ));
-        }
-        // insert into interfacesIPS
-        for ip in interface.ips {
-            if let Err(err) = conn.execute(
-                "INSERT OR IGNORE INTO interfacesIPS (interface_name, ips) VALUES (?1, ?2)",
-                params![interface.name, ip.to_string()],
-            ) {
-                return Err(anyhow::Error::msg(format!(
-                    "Failed to insert into interfacesIPS table: {}",
-                    err
-                )));
-            }
-        }
-    }
-
-    let os_input = get_input(datalink::interfaces(), None)?;
-
-    let running = Arc::new(AtomicBool::new(true));
-    let paused = Arc::new(AtomicBool::new(false));
-    let last_start_time = Arc::new(RwLock::new(Instant::now()));
-    let cumulative_time = Arc::new(RwLock::new(Duration::new(0, 0)));
-    let state_offset = Arc::new(AtomicUsize::new(0));
-
-    let mut active_threads = vec![];
-
-    let get_open_sockets = os_input.get_open_sockets;
-    let mut write_to_stdout = os_input.write_to_stdout;
-    let mut dns_client = os_input.dns_client;
-
-    let network_utilization = Arc::new(Mutex::new(Utilization::new()));
-    let mystate = Arc::new(Mutex::new(MyState::new()));
-
-    // NEED UI
-
-    let display_handler = thread::Builder::new()
-        .name("display_handler".to_string())
-        .spawn({
-            let running = running.clone();
-            let paused = paused.clone();
-            let state_offset = state_offset.clone();
-
-            let network_utilization = network_utilization.clone();
-            let last_start_time = last_start_time.clone();
-            let cumulative_time = cumulative_time.clone();
-            let mystate = mystate.clone();
-
-            move || {
-                while running.load(Ordering::Acquire) {
-                    let render_start_time = Instant::now();
-                    let utilization = { network_utilization.lock().unwrap().clone_and_reset() };
-                    let OpenSockets { sockets_to_procs } = get_open_sockets();
-
-                    // Attempt to resolve IPs to hostnames
-                    let mut ip_to_host = IpTable::new();
-                    if let Some(dns_client) = dns_client.as_mut() {
-                        ip_to_host = dns_client.cache();
-                        let unresolved_ips = utilization
-                            .connections
-                            .keys()
-                            .filter(|conn| !ip_to_host.contains_key(&conn.remote_socket.ip))
-                            .map(|conn| conn.remote_socket.ip)
-                            .collect::<Vec<_>>();
-                        dns_client.resolve(unresolved_ips);
-                    }
-                    {
-                        let mut mystate = mystate.lock().unwrap();
-                        let paused = paused.load(Ordering::SeqCst);
-                        let state_offset = state_offset.load(Ordering::SeqCst);
-                        if !paused {
-                            mystate.update_state(sockets_to_procs, utilization, ip_to_host);
-                        }
-                        let elapsed_time = elapsed_time(
-                            *last_start_time.read().unwrap(),
-                            *cumulative_time.read().unwrap(),
-                            paused,
-                        );
-
-                        // TODO: SAVE TO SQL DATABASE AND PRINT TO STDOUT PLS
-                        mystate.output_text(&mut write_to_stdout);
-                    }
-                    let render_duration = render_start_time.elapsed();
-                    if render_duration < DISPLAY_DELTA {
-                        park_timeout(DISPLAY_DELTA - render_duration);
-                    }
-                }
-            }
-        })
-        .unwrap();
-
-    active_threads.push(display_handler);
-    // TODO: do we need terminal event handler?
-
-    let sniffer_threads = os_input
-        .interfaces_with_frames
-        .into_iter()
-        .map(|(iface, frames)| {
-            let name = format!("sniffing_handler_{}", iface.name);
-            let running = running.clone();
-            let show_dns = true;
-            let network_utilization = network_utilization.clone();
-
-            thread::Builder::new()
-                .name(name)
-                .spawn(move || {
-                    let mut sniffer = Sniffer::new(iface, frames, show_dns);
-
-                    while running.load(Ordering::Acquire) {
-                        if let Some(segment) = sniffer.next() {
-                            network_utilization.lock().unwrap().update(segment);
-                        }
-                    }
-                })
-                .unwrap()
-        })
-        .collect::<Vec<_>>();
-    active_threads.extend(sniffer_threads);
-
-    for thread_handler in active_threads {
-        thread_handler.join().unwrap()
-    }
+    app.run();
 
     Ok(())
 }
 
-pub fn get_open_sockets() -> OpenSockets {
-    let mut open_sockets = HashMap::new();
-    let mut inode_to_proc = HashMap::new();
+fn build_ui(app: &Application, shared_content1: Arc<Mutex<Vec<Vec<String>>>>,shared_content2: Arc<Mutex<Vec<Vec<String>>>>,shared_content3: Arc<Mutex<Vec<Vec<String>>>>) {
+    let provider = CssProvider::new();
+    provider.load_from_data(b"* { font-family: monospace; background-color: #1e1e1e; color: #ffffff; } \
+                #HeaderLabel { color: #00ff00; } \
+                button { margin: 5px; } \
+                grid { border: 1px solid #ccc; padding: 10px; }"); 
 
-    if let Ok(all_procs) = procfs::process::all_processes() {
-        for process in all_procs.filter_map(|res| res.ok()) {
-            let Ok(fds) = process.fd() else { continue };
-            let Ok(stat) = process.stat() else { continue };
-            let proc_name = stat.comm;
-            let proc_info = ProcessInfo::new(&proc_name, stat.pid as u32);
-            for fd in fds.filter_map(|res| res.ok()) {
-                if let FDTarget::Socket(inode) = fd.target {
-                    inode_to_proc.insert(inode, proc_info.clone());
-                }
+    StyleContext::add_provider_for_display(&gdk::Display::default().unwrap(), &provider, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+
+    let setup_window = ApplicationWindow::builder().application(app).title("Setup - Refresh Rate").default_width(350).default_height(100).build();
+    let refresh_rate_entry = Entry::builder().placeholder_text("Enter refresh rate in seconds (Min: 0.5)").build();
+    let next_button = Button::builder().label("Next").build();
+    let setup_content = Box::new(Orientation::Vertical, 5);
+    setup_content.append(&refresh_rate_entry);
+    setup_content.append(&next_button);
+    setup_window.set_child(Some(&setup_content));
+    setup_window.show();
+
+    let main_window = ApplicationWindow::builder().application(app).title("RustySnout - Main Window").default_width(1000).default_height(600).build();
+    let content = Box::new(Orientation::Vertical, 5);
+    let header_label = Label::builder().label("--------------------").name("HeaderLabel").build();
+    let display_label = Label::builder().label("Select a button to display its corresponding usage data.").build();
+    let data_grid = Grid::new();
+    data_grid.set_row_spacing(10);
+    data_grid.set_column_spacing(10);
+    data_grid.set_row_homogeneous(true);
+    data_grid.set_column_homogeneous(true);
+    let button1 = Button::builder().label("Process").build();
+    let button2 = Button::builder().label("Connection").build();
+    let button3 = Button::builder().label("Remote-Address").build();
+    let buttons_box = Box::new(Orientation::Horizontal, 0);
+    buttons_box.set_valign(Align::Center);
+    buttons_box.set_halign(Align::Center);
+    buttons_box.append(&button1);
+    buttons_box.append(&button2);
+    buttons_box.append(&button3);
+    content.append(&header_label);
+    content.append(&display_label);
+    content.append(&buttons_box);
+    content.append(&data_grid);
+
+    let process_headers = vec!["Process Name", "Time", "Block Number"];
+let connection_headers = vec!["PID", "Process Name", "Upload Bps", "Download Bps", "Connections", "Time", "Block Number"];
+let remote_address_headers = vec![ "Source", "Destination", "Protocol", "Upload Bps", "Download Bps", "Process Name", "Time", "Block Number"];
+
+    main_window.set_child(Some(&content));
+
+    next_button.connect_clicked(move |_| {
+        let refresh_rate = refresh_rate_entry.text().parse::<f64>().unwrap_or(0.5).max(0.5);
+        header_label.set_text(&format!(" Refresh Rate: {}s", refresh_rate));
+        setup_window.hide();
+        main_window.show();
+    });
+
+button1.connect_clicked({
+    let display_label = display_label.clone();
+    let data_grid = data_grid.clone();
+    let content1 = shared_content1.clone();
+    let process_headers = process_headers.clone(); // Assuming headers are defined outside
+    move |_| {
+        display_label.set_label("Displaying usage data by: Process");
+
+         // Properly remove all widgets from the grid
+        let mut child = data_grid.first_child();
+        while let Some(widget) = child {
+            let next = widget.next_sibling(); // Get the next sibling to iterate before removing the current child
+            data_grid.remove(&widget); // Remove each child widget
+            child = next; // Move to the next child
+        }
+        
+        for (j, header) in process_headers.iter().enumerate() {
+            let header_label = Label::builder().label(header).build();
+            data_grid.attach(&header_label, j as i32, 0, 1, 1); // Attach headers at the first row
+        }
+        let data = content1.lock().unwrap();
+        for (i, row) in data.iter().enumerate() {
+            for (j, value) in row.iter().enumerate() {
+                let label = Label::new(Some(value));
+                data_grid.attach(&label, j as i32, (i as i32) + 1, 1, 1); // Offset by one row for headers
             }
         }
     }
+});
 
-    macro_rules! insert_proto {
-        ($source: expr, $proto: expr) => {
-            let entries = $source.into_iter().filter_map(|res| res.ok()).flatten();
-            for entry in entries {
-                if let Some(proc_info) = inode_to_proc.get(&entry.inode) {
-                    let socket = LocalSocket {
-                        ip: entry.local_address.ip(),
-                        port: entry.local_address.port(),
-                        protocol: $proto,
-                    };
-                    open_sockets.insert(socket, proc_info.clone());
-                }
-            }
-        };
-    }
+button2.connect_clicked({
+    let display_label = display_label.clone();
+    let data_grid = data_grid.clone();
+    let content2 = shared_content2.clone();
+    let connection_headers = connection_headers.clone(); // Assuming headers are defined outside
+    move |_| {
+        display_label.set_label("Displaying usage data by: Connection");
 
-    insert_proto!([procfs::net::tcp(), procfs::net::tcp6()], Protocol::Tcp);
-    insert_proto!([procfs::net::udp(), procfs::net::udp6()], Protocol::Udp);
-
-    OpenSockets {
-        sockets_to_procs: open_sockets,
-    }
-}
-
-pub fn get_datalink_channel(
-    interface: &NetworkInterface,
-) -> Result<Box<dyn DataLinkReceiver>, GetInterfaceError> {
-    let config = Config {
-        read_timeout: Some(Duration::new(1, 0)),
-        read_buffer_size: 65536,
-        ..Default::default()
-    };
-
-    match datalink::channel(interface, config) {
-        Ok(Ethernet(_tx, rx)) => Ok(rx),
-        Ok(_) => Err(GetInterfaceError::OtherError(format!(
-            "{}: Unsupported interface type",
-            interface.name
-        ))),
-        Err(e) => match e.kind() {
-            ErrorKind::PermissionDenied => Err(GetInterfaceError::PermissionError(
-                interface.name.to_owned(),
-            )),
-            _ => Err(GetInterfaceError::OtherError(format!(
-                "{}: {e}",
-                &interface.name
-            ))),
-        },
-    }
-}
-
-// fn get_interface(interface_name: &str) -> Option<NetworkInterface> {
-//     datalink::interfaces()
-//         .into_iter()
-//         .find(|iface| iface.name == interface_name)
-// }
-
-fn create_write_to_stdout() -> Box<dyn FnMut(String) + Send> {
-    let mut stdout = io::stdout();
-    Box::new({
-        move |output: String| {
-            writeln!(stdout, "{}", output).unwrap();
+        // Properly remove all widgets from the grid
+        let mut child = data_grid.first_child();
+        while let Some(widget) = child {
+            let next = widget.next_sibling(); // Get the next sibling to iterate before removing the current child
+            data_grid.remove(&widget); // Remove each child widget
+            child = next; // Move to the next child
         }
-    })
-}
 
-fn eperm_message() -> &'static str {
-    r#"
-    Insufficient permissions to listen on network interface(s). You can work around
-    this issue like this:
-
-    * Try running `rustysnout` with `sudo`
-
-    * Build a `setcap(8)` wrapper for `rustysnout` with the following rules:
-        `cap_sys_ptrace,cap_dac_read_search,cap_net_raw,cap_net_admin+ep`
-    "#
-}
-
-pub fn get_input(
-    interfaces: Vec<NetworkInterface>,
-    dns_server: Option<Ipv4Addr>,
-) -> anyhow::Result<OsInputOutput> {
-    // get the user's requested interface, if any
-    // IDEA: allow requesting multiple interfaces
-
-    // take the user's requested interfaces (or all interfaces), and filter for up ones
-    let available_interfaces = interfaces
-        .into_iter()
-        .filter(|interface| {
-            // see https://github.com/libpnet/libpnet/issues/564
-            let keep = interface.is_up() && !interface.ips.is_empty();
-            if !keep {
-                println!("{} is down. Skipping it.", interface.name);
+        for (j, header) in connection_headers.iter().enumerate() {
+            let header_label = Label::builder().label(header).build();
+            data_grid.attach(&header_label, j as i32, 0, 1, 1); // Attach headers at the first row
+        }
+        let data = content2.lock().unwrap();
+        for (i, row) in data.iter().enumerate() {
+            for (j, value) in row.iter().enumerate() {
+                let label = Label::new(Some(value));
+                data_grid.attach(&label, j as i32, (i as i32) + 1, 1, 1); // Offset by one row for headers
             }
-            keep
-        })
-        .collect_vec();
-
-    // bail if no interfaces are up
-    if available_interfaces.is_empty() {
-        bail!("Failed to find any network interface to listen on.");
+        }
     }
+});
 
-    // try to get a frame receiver for each interface
-    let interfaces_with_frames_res = available_interfaces
-        .into_iter()
-        .map(|interface| {
-            let frames_res = get_datalink_channel(&interface);
-            (interface, frames_res)
-        })
-        .collect_vec();
 
-    // warn for all frame receivers we failed to acquire
-    interfaces_with_frames_res
-        .iter()
-        .filter_map(|(interface, frames_res)| frames_res.as_ref().err().map(|err| (interface, err)))
-        .for_each(|(interface, err)| {
-            println!(
-                "Failed to acquire a frame receiver for {}: {err}",
-                interface.name
-            )
-        });
+button3.connect_clicked({
+    let display_label = display_label.clone();
+    let data_grid = data_grid.clone();
+    let content3 = shared_content3.clone();
+    let remote_address_headers = remote_address_headers.clone(); // Ensure headers are cloned or accessible in the closure
+    move |_| {
+        display_label.set_label("Displaying usage data by: Remote-Address");
 
-    if interfaces_with_frames_res
-        .iter()
-        .all(|(_, frames)| frames.is_err())
-    {
-        let (permission_err_interfaces, other_errs) = interfaces_with_frames_res.iter().fold(
-            (vec![], vec![]),
-            |(mut perms, mut others), (_, res)| {
-                match res {
-                    Ok(_) => (),
-                    Err(GetInterfaceError::PermissionError(interface)) => {
-                        perms.push(interface.as_str())
-                    }
-                    Err(GetInterfaceError::OtherError(err)) => others.push(err.as_str()),
-                }
-                (perms, others)
-            },
-        );
+        // Properly remove all widgets from the grid
+        let mut child = data_grid.first_child();
+        while let Some(widget) = child {
+            let next = widget.next_sibling(); // Get the next sibling to iterate before removing the current child
+            data_grid.remove(&widget); // Remove each child widget
+            child = next; // Move to the next child
+        }
 
-        let err_msg = match (permission_err_interfaces.is_empty(), other_errs.is_empty()) {
-            (false, false) => format!(
-                "\n\n{}: {}\nAdditional errors:\n{}",
-                permission_err_interfaces.join(", "),
-                eperm_message(),
-                other_errs.join("\n")
-            ),
-            (false, true) => format!(
-                "\n\n{}: {}",
-                permission_err_interfaces.join(", "),
-                eperm_message()
-            ),
-            (true, false) => format!("\n\n{}", other_errs.join("\n")),
-            (true, true) => unreachable!("Found no errors in error handling code path."),
-        };
-        bail!(err_msg);
+        // Attach new headers at the first row
+        for (j, header) in remote_address_headers.iter().enumerate() {
+            let header_label = gtk::Label::builder().label(header).build();
+            data_grid.attach(&header_label, j as i32, 0, 1, 1);
+        }
+
+        // Retrieve data and display it, offset by one row for headers
+        let data = content3.lock().unwrap();
+        for (i, row) in data.iter().enumerate() {
+            for (j, value) in row.iter().enumerate() {
+                let label = gtk::Label::new(Some(value));
+                data_grid.attach(&label, j as i32, (i as i32) + 1, 1, 1); // Offset by one row for headers
+            }
+        }
     }
+});
 
-    // filter out interfaces for which we failed to acquire a frame receiver
-    let interfaces_with_frames = interfaces_with_frames_res
-        .into_iter()
-        .filter_map(|(interface, res)| res.ok().map(|frames| (interface, frames)))
-        .collect();
-
-    let dns_client = {
-        let runtime = Runtime::new()?;
-        let resolver = runtime
-            .block_on(dns::Resolver::new(dns_server))
-            .map_err(|err| {
-                anyhow!("Could not initialize the DNS resolver. Are you offline?\n\nReason: {err}")
-            })?;
-        let dns_client = dns::Client::new(resolver, runtime)?;
-        Some(dns_client)
-    };
-
-    let write_to_stdout = create_write_to_stdout();
-
-    Ok(OsInputOutput {
-        interfaces_with_frames,
-        get_open_sockets,
-        dns_client,
-        write_to_stdout,
-    })
-}
-
-pub fn elapsed_time(last_start_time: Instant, cumulative_time: Duration, paused: bool) -> Duration {
-    if paused {
-        cumulative_time
-    } else {
-        cumulative_time + last_start_time.elapsed()
-    }
 }
