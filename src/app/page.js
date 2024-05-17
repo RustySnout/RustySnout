@@ -1,10 +1,19 @@
 'use client'
 import Image from "next/image";
 import styles from "./page.module.css";
+import { invoke } from "@tauri-apps/api/tauri"
+import { useEffect } from "react";
+
 
 export default function Home() {
 
+  useEffect(() => {
 
+    const process_data = invoke("get_process_wrapper").then((res) => {
+      console.log(res);
+    });
+
+  });
 
 
   return (

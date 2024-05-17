@@ -11,6 +11,7 @@ pub use objects::{
     GetInterfaceError, IpTable, LocalSocket, MyState, OpenSockets, OsInputOutput, ProcessInfo,
     Protocol, Utilization,
 };
+use serde_json::json;
 use sniffer::Sniffer;
 
 use anyhow::{anyhow, bail};
@@ -39,6 +40,7 @@ fn main() {
 
   // Run the Tauri app in the main thread
   tauri::Builder::default()
+    .invoke_handler(tauri::generate_handler![get_process_wrapper])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|_app_handle, event| match event { //this is done to prevent backend from exiting so it keeps monitoring
@@ -49,15 +51,46 @@ fn main() {
     });
 }
 
+/* querying data from sqlite database data.db
+   after we have the query functions we will wrap them in the tauri
+   command macro so we can invoke them from the javascript 
+   we return a the query result as a json string
+*/
+
+use rusqlite::{Connection, Result};
+
+// gets the latest process block row and then return json string
+#[tauri::command]
+fn get_process_wrapper() -> String {
+  match get_process() {
+    Ok(result) => result,
+    Err(err) => format!("Error: {}", err),
+  }
+}
+
+fn get_process() -> Result<String, anyhow::Error> {
+  let conn = Connection::open("data.db")?;
+  let mut stmt = conn.prepare("SELECT process_name, time, block_number FROM App WHERE block_number = (SELECT MAX(block_number) FROM App)")?;
+
+  let process_iter = stmt.query_map([], |row| {
+    Ok(json!({
+      "process_name": row.get::<_, String>(0)?,
+      "time": row.get::<_, i64>(1)?,
+      "block_number": row.get::<_, i64>(2)?
+    }))
+  })?;
+
+  let mut process_vec = Vec::new();
+
+  for process in process_iter {
+    process_vec.push(process?);
+  }
+
+  Ok(json!(process_vec).to_string())
+}
 
 //use thiserror::Error;
 const DISPLAY_DELTA: Duration = Duration::from_millis(1000);
-
-#[tauri::command]
-async fn monitoring_getter() {
-  start_monitoring();
-}
-
 
 fn start_monitoring() -> anyhow::Result<()> {
     // Open a connection to the SQLite database, creates if it doesnt exit
