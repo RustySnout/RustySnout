@@ -92,6 +92,128 @@ fn get_process() -> Result<String, anyhow::Error> {
 //use thiserror::Error;
 const DISPLAY_DELTA: Duration = Duration::from_millis(1000);
 
+fn create_database_ifn_exist() -> anyhow::Result<()> {
+
+    let conn = match sqlConnection::open("data.db") {
+        Ok(conn) => conn,
+        Err(err) => {
+            return Err(anyhow::Error::msg(format!(
+                "Failed to open SQLite database: {}",
+                err
+            )));
+        }
+    };
+
+
+    // Create the tables if they don't exist
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS App (
+            process_name TEXT,
+            time INTEGER DEFAULT CURRENT_TIMESTAMP,
+            block_number INTEGER,
+            constraint pk_app primary key (process_name, block_number)
+        )",
+        [],
+    ) {
+        return Err(anyhow::Error::msg(format!(
+            "Failed to create App table: {}",
+            err
+        )));
+    }
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS processes (
+            pid INTEGER,
+            process_name TEXT,
+            up_bps INTEGER,
+            down_bps INTEGER,
+            connections INTEGER,
+            time INTEGER DEFAULT CURRENT_TIMESTAMP,
+            block_number INTEGER,
+            constraint pk_processes primary key (pid, block_number),
+            constraint fk_processes_name foreign key (process_name) references App (process_name)
+        )",
+        [],
+    ) {
+        return Err(anyhow::Error::msg(format!(
+            "Failed to create processes table: {}",
+            err
+        )));
+    }
+
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS interfaces (
+            interface_name TEXT PRIMARY KEY,
+            description TEXT,
+            mac TEXT,
+            flags TEXT
+        )",
+        [],
+    ) {
+        return Err(anyhow::Error::msg(format!(
+            "Failed to create interfaces table: {}",
+            err
+        )));
+    }
+
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS interfacesIPS (
+            interface_name TEXT,
+            ips TEXT,
+            FOREIGN KEY (interface_name) REFERENCES interfaces (interface_name),
+            PRIMARY KEY (interface_name, ips)
+        )",
+        [],
+    ) {
+        return Err(anyhow::Error::msg(format!(
+            "Failed to create interfacesIPS table: {}",
+            err
+        )));
+    }
+
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS connections (
+            cid INTEGER,
+            source TEXT,
+            destination TEXT,
+            protocol TEXT,
+            up_bps INTEGER,
+            down_bps INTEGER,
+            process_name TEXT,
+            time INTEGER DEFAULT CURRENT_TIMESTAMP,
+            block_number INTEGER,
+            CONSTRAINT pk_connections PRIMARY KEY (cid, block_number),
+            CONSTRAINT fk_connections_source FOREIGN KEY (source) REFERENCES interfaces (interface_name)
+        )",
+        [],
+    ) {
+        return Err(anyhow::Error::msg(format!("Failed to create connections table: {}", err),
+        ));
+    }
+
+    if let Err(err) = conn.execute(
+        "CREATE TABLE IF NOT EXISTS remote_addresses (
+            rid INTEGER,
+            address TEXT,
+            up_bps INTEGER,
+            down_bps INTEGER,
+            connections INTEGER,
+            time INTEGER DEFAULT CURRENT_TIMESTAMP,
+            block_number INTEGER,
+            constraint pk_remote_addresses primary key (rid, block_number)
+        )",
+        [],
+    ) {
+        return Err(anyhow::Error::msg(format!(
+            "Failed to create remote_addresses table: {}",
+            err
+        )));
+    }
+
+    Ok(())
+
+}
+
+
 fn start_monitoring() -> anyhow::Result<()> {
     // Open a connection to the SQLite database, creates if it doesnt exit
     let conn = match sqlConnection::open("data.db") {
