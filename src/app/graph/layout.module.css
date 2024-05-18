@@ -10,11 +10,31 @@
     border: 1px solid rgba(var(--callout-border-rgb), 0.3);
     border-radius: var(--border-radius);
     filter: drop-shadow(0 0 0.75rem rgba(var(--callout-border-rgb), 0.2));
-}
-
-/*if the screen width decreases than 1000px do these styles instead*/
-@media screen and (max-width: 1000px) {
+    position: relative; /* Added for positioning the warning banner */
+  }
+  
+  .warningBanner {
+    position: absolute;
+    top: 15px;
+    right: 30px;
+    padding: 0.5rem 1rem;
+    border-radius: var(--border-radius);
+    background: rgba(var(--card-rgb), 0.1);
+    border: 1px solid rgba(var(--card-border-rgb), 0.15);
+    font-weight: 600;
+    color: rgb(255, 52, 52); /* Adjust color as needed */
+    transition: background 200ms, border 200ms;
+  }
+  
+  @media screen and (max-width: 1000px) {
     .graphBody {
-        width: 50vw;
+      width: 50vw;
     }
-}
+    
+    .warningBanner {
+      font-size: 0.8rem;
+      padding: 0.3rem 0.6rem;
+      font-family: var(--font-mono);
+    }
+  }
+  

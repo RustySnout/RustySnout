@@ -1,4 +1,4 @@
-'use client'
+'use client';
 import React, { useState, useEffect } from 'react';
 import Table from "../genericTable/layout";
 import Graph from "../graph/layout";
@@ -14,10 +14,11 @@ const MonitoringView = () => {
   const [colHeaders, setColHeaders] = useState([]);
   const [rowData, setRowData] = useState([]);
   const [invokeFunction, setInvokeFunction] = useState("get_process_stats_wrapper");
-  const [refresh, setRefresh] = useState(false);  
+  const [refresh, setRefresh] = useState(false);
+  const [UpBPS, setUpBPS] = useState(1200);  // Temporarily set to a value greater than 1000 for testing
 
   // button handlers that change the state of invokeFunction to the tauri command we need
-  // this are called onClick in the html below
+  // these are called onClick in the html below
   const handleProcess = () => {
     setInvokeFunction("get_remote_address_wrapper");
   };
@@ -39,6 +40,10 @@ const MonitoringView = () => {
             const data = JSON.parse(res);
             setColHeaders(Object.keys(data[0]));
             setRowData(data);
+            // Assuming UpBPS is part of the data fetched
+            if (data.length > 0 && data[0].UpBPS !== undefined) {
+              setUpBPS(data[0].UpBPS);
+            }
         }).catch((err) => {
             setRefresh(false);
             console.log(err);
@@ -49,7 +54,7 @@ const MonitoringView = () => {
     fetchData();
     const intervalId = setInterval(fetchData, 5000);
     return () => clearInterval(intervalId);
-});
+  }, [invokeFunction]);  // Add missing dependency array
 
   // this changes the style of the refresh icon to show that the data is being refreshed
   // see layout.module.css for the styles .refreshing and .refresh to see how it is done
@@ -72,7 +77,7 @@ const MonitoringView = () => {
             <Image src="/control.svg" alt="Next.js Logo" width={50} height={50} className={styles.symbol}/> 
           </button>
         </div>
-        <Graph />
+        <Graph UpBPS={UpBPS} /> {/* Pass UpBPS to Graph component */}
       </div>
       <div className={styles.refreshTable}>
         <Image src="/loading.svg" alt="Next.js Logo" width={50} height={50} className={refreshStyle}/>
