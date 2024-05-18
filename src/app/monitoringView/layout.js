@@ -10,7 +10,7 @@ import Image from "next/image";
 const MonitoringView = () => {
   const [colHeaders, setColHeaders] = useState([]);
   const [rowData, setRowData] = useState([]);
-  const [invokeFunction, setInvokeFunction] = useState("get_process_stats_wrapper");
+  const [invokeFunction, setInvokeFunction] = useState("get_connections_wrapper");
   const [refresh, setRefresh] = useState(false);  
   const [showControlPanel, setShowControlPanel] = useState(false);
 
