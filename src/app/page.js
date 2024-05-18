@@ -2,39 +2,9 @@
 import styles from "./page.module.css";
 import { invoke } from "@tauri-apps/api/tauri"
 import { useEffect } from "react";
-import Table from "./genericTable/layout";
 import Image from "next/image";
+import MonitoringView from "./monitoringView/layout";
 
-
-const colsTestJson = [
-  "id",
-  "name",
-  "age"
-];
-
-const rowsTestJson = [
-  {
-    "id": 1,
-    "name": "John",
-    "age": 30
-  },
-  {
-    "id": 2,
-    "name": "Doe",
-    "age": 25
-  },
-  {
-    "id": 3,
-    "name": "Jane",
-    "age": 28
-  },
-  {
-    "id": 4,
-    "name": "Doe",
-    "age": 25
-  }
-
-];
 
 export default function Home() {
 
@@ -51,7 +21,7 @@ export default function Home() {
         <Image src="/RustySnout.png" alt="Next.js Logo" width={50} height={50} className={styles.logo}/>
         <p>RustySnout</p>
       </div>
-        <Table rows={rowsTestJson} columns={colsTestJson} />
+        <MonitoringView />
     </main>
   );
 }

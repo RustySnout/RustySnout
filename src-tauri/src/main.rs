@@ -287,6 +287,15 @@ fn create_database_ifn_exist() -> anyhow::Result<()> {
 
 }
 
+fn nuke_database() {
+    let conn = Connection::open("data.db").unwrap();
+    conn.execute("DROP TABLE App", []).unwrap();
+    conn.execute("DROP TABLE processes", []).unwrap();
+    conn.execute("DROP TABLE interfaces", []).unwrap();
+    conn.execute("DROP TABLE interfacesIPS", []).unwrap();
+    conn.execute("DROP TABLE connections", []).unwrap();
+    conn.execute("DROP TABLE remote_addresses", []).unwrap();
+}
 
 fn start_monitoring() -> anyhow::Result<()> {
     // Open a connection to the SQLite database, creates if it doesnt exit
