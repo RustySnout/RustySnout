@@ -6,58 +6,77 @@ import styles from './layout.module.css';
 import { invoke } from "@tauri-apps/api/tauri";
 import Image from "next/image";
 
+
+// navigate to the control page
+const handleControl = () => { };
+
 const MonitoringView = () => {
   const [colHeaders, setColHeaders] = useState([]);
   const [rowData, setRowData] = useState([]);
   const [refresh, setRefresh] = useState(false);
+  const [invokeFunction, setInvokeFunction] = useState("get_process_stats_wrapper");
 
-  useEffect(() => {
-    const fetchData = () => {
-      setRefresh(true);
-      invoke("get_process_stats_wrapper").then((res) => {
+  //sleep 
+  const sleep = (milliseconds) => {
+    return new Promise(resolve => setTimeout(resolve, milliseconds))
+  }
+
+  const handleProcess = () => {
+    sleep(1000);
+    setInvokeFunction("get_process_wrapper");
+    fetchData();
+  };
+
+  const handleConnection = () => { 
+    sleep(1000);
+    setInvokeFunction("get_process_stats_wrapper");
+    fetchData();
+  };
+
+  const handleRemoteAddr = () => { 
+    sleep(1000);
+    setInvokeFunction("get_connections_wrapper");
+    fetchData();
+  };
+
+  const fetchData = () => {
+    setRefresh(true);
+    invoke(invokeFunction)
+      .then((res) => {
         console.log(res);
-        // parse the json string into cols and rows
         const data = JSON.parse(res);
-    
-        // set column headers by the Json keys
         setColHeaders(Object.keys(data[0]));
-    
-        // rows
         setRowData(data);
-
         setRefresh(false);
-      }).catch((err) => {
+      })
+      .catch((err) => {
         console.log(err);
         setRefresh(false);
       });
-    };
-    
-    // Fetch data immediately
+  };
+
+  useEffect(() => {
     fetchData();
-    
-    // Then fetch data every 5 seconds (or whatever interval you want)
     const intervalId = setInterval(fetchData, 2000);
-    
-    // Clear the interval when the component unmounts
     return () => clearInterval(intervalId);
   }, []);
-    
+
   const refreshStyle = refresh ? styles.refreshing : styles.refresh;
 
   return (
     <div className={styles.monitoringBody}>
       <div className={styles.topContainer}>
         <div className={styles.buttonContainer}>
-          <button> 
+          <button onClick={handleProcess}> 
             <Image src="/process.svg" alt="Next.js Logo" width={50} height={50} className={styles.symbol}/>  
           </button>
-          <button> 
+          <button onClick={handleConnection}> 
             <Image src="/connections.svg" alt="Next.js Logo" width={50} height={50} className={styles.symbol}/>  
           </button>
-          <button> 
+          <button onClick={handleRemoteAddr}> 
             <Image src="/remoteAddr.svg" alt="Next.js Logo" width={50} height={50} className={styles.symbol}/>
           </button>
-          <button> 
+          <button onClick={handleControl}> 
             <Image src="/control.svg" alt="Next.js Logo" width={50} height={50} className={styles.symbol}/> 
           </button>
         </div>

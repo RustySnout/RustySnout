@@ -39,6 +39,13 @@
 .symbol {
     width: 2em;
     height: 2em;
+    filter: invert(1);
+}
+
+@media ( prefers-color-scheme: dark ) {
+    .symbol {
+        filter: invert(0);
+    }
 }
 
 .topContainer button:hover {
@@ -91,6 +98,21 @@
 @media screen and (max-width: 1000px) {
   .monitoringBody {
     flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .topContainer {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+
+  .buttonContainer {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
     align-items: center;
   }
     

@@ -49,6 +49,7 @@
   background: rgba(var(--card-rgb), 0);
   border: 1px solid rgba(var(--card-border-rgb), 0);
   transition: background 200ms, border 200ms;
+  overflow-x: auto;
 }
 
 /* Enable hover only on non-touch devices */
@@ -63,4 +64,20 @@
     transform: translateY(4px);
   }
 
+}
+
+@media screen and (max-width: 1000px) {
+  .tableContainer {
+    padding: 1rem 1.2rem;
+    font-size: 0.5rem;
+  }
+
+  .headerCells {
+    padding: 0.8rem 1.2rem;
+  }
+
+  .cells {
+    padding: 0.4rem 1.2rem;
+  }
+  
 }
