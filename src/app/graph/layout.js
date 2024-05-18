@@ -5,7 +5,6 @@ import styles from './layout.module.css';
 
 import { invoke } from "@tauri-apps/api/tauri";
 
-
 const GraphBody = () => {
  
   const [data, setData] = useState([]);
