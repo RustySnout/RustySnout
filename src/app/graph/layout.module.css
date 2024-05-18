@@ -6,7 +6,6 @@
     height: 25em;
     margin: 1em;
     width: 50em;
-    padding: 2em;
     background-color: rgba(var(--callout-rgb), 0.5);
     border: 1px solid rgba(var(--callout-border-rgb), 0.3);
     border-radius: var(--border-radius);
@@ -31,6 +30,7 @@
     .graphBody {
       width: 50vw;
     }
+<<<<<<< HEAD
 }
 
 .tooltip {
@@ -41,3 +41,6 @@
 }
     
   
+=======
+}
+>>>>>>> parent of 8414ff2 (graphs and stuff)
