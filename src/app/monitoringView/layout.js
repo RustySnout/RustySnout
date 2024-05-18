@@ -13,53 +13,41 @@ const handleControl = () => { };
 const MonitoringView = () => {
   const [colHeaders, setColHeaders] = useState([]);
   const [rowData, setRowData] = useState([]);
-  const [refresh, setRefresh] = useState(false);
   const [invokeFunction, setInvokeFunction] = useState("get_process_stats_wrapper");
+  const [refresh, setRefresh] = useState(false);  
 
-  //sleep 
-  const sleep = (milliseconds) => {
-    return new Promise(resolve => setTimeout(resolve, milliseconds))
-  }
 
   const handleProcess = () => {
-    sleep(1000);
     setInvokeFunction("get_process_wrapper");
-    fetchData();
   };
 
   const handleConnection = () => { 
-    sleep(1000);
     setInvokeFunction("get_process_stats_wrapper");
-    fetchData();
   };
 
   const handleRemoteAddr = () => { 
-    sleep(1000);
     setInvokeFunction("get_connections_wrapper");
-    fetchData();
-  };
-
-  const fetchData = () => {
-    setRefresh(true);
-    invoke(invokeFunction)
-      .then((res) => {
-        console.log(res);
-        const data = JSON.parse(res);
-        setColHeaders(Object.keys(data[0]));
-        setRowData(data);
-        setRefresh(false);
-      })
-      .catch((err) => {
-        console.log(err);
-        setRefresh(false);
-      });
   };
 
   useEffect(() => {
+    setRefresh(true);
+    const fetchData = () => {
+        invoke(invokeFunction).then((res) => {
+            setRefresh(false);
+            console.log(res);
+            const data = JSON.parse(res);
+            setColHeaders(Object.keys(data[0]));
+            setRowData(data);
+        }).catch((err) => {
+            setRefresh(false);
+            console.log(err);
+        });
+    };
+
     fetchData();
-    const intervalId = setInterval(fetchData, 2000);
+    const intervalId = setInterval(fetchData, 5000);
     return () => clearInterval(intervalId);
-  }, []);
+});
 
   const refreshStyle = refresh ? styles.refreshing : styles.refresh;
 
