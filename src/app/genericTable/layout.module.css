@@ -31,6 +31,7 @@
   background: rgba(var(--card-rgb), 0);
   border: 1px solid rgba(var(--card-border-rgb), 0);
   transition: background 200ms, border 200ms;
+  transition: 100ms;
 }
 
 .cells {
@@ -41,6 +42,7 @@
   border-radius: var(--border-radius);
   background: rgba(var(--card-rgb), 0);
   border: 1px solid rgba(var(--card-border-rgb), 0);
+  transition: 100ms;
 }
 
 .tableContainer { 
@@ -48,7 +50,7 @@
   border-radius: var(--border-radius);
   background: rgba(var(--card-rgb), 0);
   border: 1px solid rgba(var(--card-border-rgb), 0);
-  transition: background 200ms, border 200ms;
+  transition: 100ms;
   overflow-x: auto;
 }
 
