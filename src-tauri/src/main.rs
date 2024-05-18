@@ -47,7 +47,12 @@ fn main() {
 
   // Run the Tauri app in the main thread
   tauri::Builder::default()
-    .invoke_handler(tauri::generate_handler![get_process_wrapper, get_remote_address_wrapper, get_connections_wrapper])
+    .invoke_handler(tauri::generate_handler![
+      get_process_wrapper, 
+      get_remote_address_wrapper, 
+      get_connections_wrapper, 
+      get_current_throughput_wrapper
+    ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|_app_handle, event| match event { //this is done to prevent backend from exiting so it keeps monitoring
@@ -101,12 +106,12 @@ async fn get_current_throughput_wrapper() -> String {
 
 fn get_current_throughput() -> Result<String, anyhow::Error> {
   let conn = Connection::open("data.db")?;
-  let mut stmt = conn.prepare("SELECT up_bps, down_bps FROM processes WHERE block_number = (SELECT MAX(block_number) FROM processes)")?;
+  let mut stmt = conn.prepare("SELECT AVG(up_bps), AVG(down_bps) FROM processes WHERE block_number = (SELECT MAX(block_number) FROM processes)")?;
 
   let throughput_iter = stmt.query_map([], |row| {
     Ok(json!({
-      "up_bps": row.get::<_, i64>(0)?,
-      "down_bps": row.get::<_, i64>(1)?,
+      "up_bps": row.get::<_, f64>(0)?,
+      "down_bps": row.get::<_, f64>(1)?,
     }))
   })?;
 
@@ -151,12 +156,12 @@ fn get_connections() -> Result<String, anyhow::Error> {
 
   let connections_iter = stmt.query_map([], |row| {
     Ok(json!({
-      "source": row.get::<_, String>(1)?,
-      "destination": row.get::<_, String>(2)?,
-      "protocol": row.get::<_, String>(3)?,
-      "up_bps": row.get::<_, String>(4)?,
-      "down_bps": row.get::<_, String>(5)?,
-      "process_name": row.get::<_, String>(6)?,
+      "source": row.get::<_, String>(0)?,
+      "destination": row.get::<_, String>(1)?,
+      "protocol": row.get::<_, String>(2)?,
+      "up_bps": row.get::<_, i64>(3)?,
+      "down_bps": row.get::<_, i64>(4)?,
+      "process_name": row.get::<_, String>(5)?,
     }))
   })?;
 

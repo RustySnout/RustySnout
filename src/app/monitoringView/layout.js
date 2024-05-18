@@ -13,13 +13,13 @@ const handleControl = () => { };
 const MonitoringView = () => {
   const [colHeaders, setColHeaders] = useState([]);
   const [rowData, setRowData] = useState([]);
-  const [invokeFunction, setInvokeFunction] = useState("get_process_stats_wrapper");
+  const [invokeFunction, setInvokeFunction] = useState("get_connections_wrapper");
   const [refresh, setRefresh] = useState(false);  
 
   // button handlers that change the state of invokeFunction to the tauri command we need
   // this are called onClick in the html below
   const handleProcess = () => {
-    setInvokeFunction("get_remote_address_wrapper");
+    setInvokeFunction("get_connections_wrapper");
   };
 
   const handleConnection = () => { 
@@ -27,7 +27,7 @@ const MonitoringView = () => {
   };
 
   const handleRemoteAddr = () => { 
-    setInvokeFunction("get_connections_wrapper");
+    setInvokeFunction("get_remote_address_wrapper");
   };
 
   useEffect(() => {

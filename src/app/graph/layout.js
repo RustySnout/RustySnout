@@ -1,19 +1,47 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import styles from './layout.module.css';
 
-const data = [
-  { name: 'Ahmed', uv: 4000, pv: 2400, amt: 2400 },
-  { name: 'Waseem', uv: 3000, pv: 1398, amt: 2210 },
-  { name: 'Mohammed', uv: 2000, pv: 9800, amt: 2290 },
-  { name: 'Adly', uv: 2780, pv: 3908, amt: 2000 },
-  { name: 'Raslan', uv: 1890, pv: 2000, amt: 2181 },
-  { name: 'and', uv: 2390, pv: 3800, amt: 2500 },
-  { name: 'Se7s', uv: 10000, pv: 12000, amt: 1000 },
-];
+import { invoke } from "@tauri-apps/api/tauri";
+
 
 const GraphBody = () => {
+ 
+  const [data, setData] = useState([]);
+  const [elapsedTime, setElapsedTime] = useState(0);
+  
+  useEffect(() => {
+    const fetchData = () => {
+      invoke("get_current_throughput_wrapper").then((res) => {
+        console.log(res);
+
+        // convert res to JSON
+        let temp = JSON.parse(res)[0];
+
+        // append current elapsed time to res
+        temp.name = elapsedTime
+        setElapsedTime(elapsedTime + 5);
+
+        //append data to previous data
+        setData([...data, temp]);
+        console.log(data);
+
+        // if data records are above 25 remove the last record
+        if (data.length > 25) {
+          setData(data.slice(1, data.length));
+        }
+
+      }).catch((err) => {
+        console.log(err);
+      });
+    };
+
+    fetchData();
+    const intervalId = setInterval(fetchData, 5000);
+    return () => clearInterval(intervalId);
+  });
+
   return (
     <div className={styles.graphBody}>
       <ResponsiveContainer width="100%" height="100%">
@@ -22,14 +50,28 @@ const GraphBody = () => {
           height={400}
           data={data}
           margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+          syncId="I"
         >
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="name" />
           <YAxis />
-          <Tooltip />
-          <Area type="monotone" dataKey="uv" stackId="1" stroke="#8884d8" fill="#8884d8" />
-          <Area type="monotone" dataKey="pv" stackId="1" stroke="#82ca9d" fill="#82ca9d" />
-          <Area type="monotone" dataKey="amt" stackId="1" stroke="#ffc658" fill="#ffc658" />
+          <Tooltip wrapperClassName={styles.tooltip}/>
+          <Area type="monotone" dataKey="up_bps" stackId="1" stroke="#52ff3d" fill="#52ff3d" />
+        </AreaChart>
+      </ResponsiveContainer>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart
+          width={500}
+          height={400}
+          data={data}
+          margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
+          syncId="I"
+        >
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="name" />
+          <YAxis />
+          <Tooltip wrapperClassName={styles.tooltip}/>
+          <Area type="monotone" dataKey="down_bps" stackId="1" stroke="#5f33ff" fill="#5f33ff" />
         </AreaChart>
       </ResponsiveContainer>
     </div>

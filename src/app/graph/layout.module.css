@@ -6,6 +6,7 @@
     height: 25em;
     margin: 1em;
     width: 50em;
+    padding: 2em;
     background-color: rgba(var(--callout-rgb), 0.5);
     border: 1px solid rgba(var(--callout-border-rgb), 0.3);
     border-radius: var(--border-radius);
@@ -17,4 +18,11 @@
     .graphBody {
         width: 50vw;
     }
+}
+
+.tooltip {
+    border-radius: var(--border-radius);
+    box-shadow: inset 10em 10em 0rem rgba(var(--callout-rgb), 1);
+    /*recolor with filter*/
+    color: rgba(var(--callout-border-rgb), 1);
 }
