@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import styles from './layout.module.css';
+import Image from "next/image";
 
 import { invoke } from "@tauri-apps/api/tauri";
 
@@ -9,9 +10,11 @@ const GraphBody = () => {
  
   const [data, setData] = useState([]);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [warning, setWarning] = useState(false);
+  const [updateInterval, setUpdateInterval] = useState(1000);
   
   useEffect(() => {
-    const fetchData = () => {
+    const fetchData = async () => {
       invoke("get_current_throughput_wrapper").then((res) => {
         console.log(res);
 
@@ -20,7 +23,7 @@ const GraphBody = () => {
 
         // append current elapsed time to res
         temp.name = elapsedTime
-        setElapsedTime(elapsedTime + 5);
+        setElapsedTime(elapsedTime + updateInterval / 1000);
 
         //append data to previous data
         setData([...data, temp]);
@@ -31,18 +34,33 @@ const GraphBody = () => {
           setData(data.slice(1, data.length));
         }
 
+        // check if the upload and download rates are above 10000
+        if (temp.up_bps > 10000 || temp.down_bps > 10000) {
+          setWarning(true);
+        } else {
+          setWarning(false);
+        }
+
       }).catch((err) => {
         console.log(err);
       });
     };
 
     fetchData();
-    const intervalId = setInterval(fetchData, 5000);
+    const intervalId = setInterval(fetchData, updateInterval);
     return () => clearInterval(intervalId);
   });
 
+  const warningJSX = warning ? 
+    <Image className={styles.warning} src="/warning.svg" alt="warning" width={20} height={20} />
+   : null;
+
   return (
     <div className={styles.graphBody}>
+      <div className={styles.HeaderContainer}>
+        <p>Average Upload and Download Rates</p>
+        {warningJSX}
+      </div>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart
           width={500}
@@ -70,7 +88,7 @@ const GraphBody = () => {
           <XAxis dataKey="name" />
           <YAxis />
           <Tooltip wrapperClassName={styles.tooltip}/>
-          <Area type="monotone" dataKey="down_bps" stackId="1" stroke="#5f33ff" fill="#5f33ff" />
+          <Area type="monotone" dataKey="down_bps" stackId="1" stroke="#2f33ff" fill="#2f33ff" />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -80,7 +98,7 @@ const GraphBody = () => {
 
 const Graph = () => {
   return (
-    <div className={styles.graphBody}>
+    <div >
       <GraphBody />
     </div>
   );

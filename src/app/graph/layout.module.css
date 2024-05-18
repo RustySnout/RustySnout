@@ -4,27 +4,51 @@
     align-items: center;
     justify-content: center;
     height: 25em;
-    margin: 1em;
     width: 50em;
+    padding: 1em;
+    margin-top: 1em;
+    margin-left: 0.7em;
     background-color: rgba(var(--callout-rgb), 0.5);
     border: 1px solid rgba(var(--callout-border-rgb), 0.3);
     border-radius: var(--border-radius);
     filter: drop-shadow(0 0 0.75rem rgba(var(--callout-border-rgb), 0.2));
     position: relative;
   }
-  
-  .warningBanner {
-    position: absolute;
-    top: 15px;
-    right: 30px;
-    padding: 0.5rem 1rem;
-    border-radius: var(--border-radius);
-    background: rgba(var(--card-rgb), 0.1);
-    border: 1px solid rgba(var(--card-border-rgb), 0.15);
+
+.graphBody p {
+    font-size: 0.7em;
     font-weight: 600;
-    color: rgb(255, 52, 52); /* Adjust color as needed */
-    transition: background 200ms, border 200ms;
-  }
+    font-family: var(--font-mono);
+}
+
+.warning {
+    position: absolute;
+    animation: fadeInOut 2s ease-in-out infinite;
+    width: 2.5em;
+    height: 2.5em;
+    transition: 200ms;
+    right: 10em;
+    top: -1em;
+}
+
+@keyframes fadeInOut {
+    0% {
+      opacity: 0;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+}
+
+.HeaderContainer {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
   
 @media screen and (max-width: 1000px) {
     .graphBody {

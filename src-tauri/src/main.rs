@@ -155,12 +155,12 @@ fn get_connections() -> Result<String, anyhow::Error> {
 
   let connections_iter = stmt.query_map([], |row| {
     Ok(json!({
-      "source": row.get::<_, String>(1)?,
-      "destination": row.get::<_, String>(2)?,
-      "protocol": row.get::<_, String>(3)?,
-      "up_bps": row.get::<_, String>(4)?,
-      "down_bps": row.get::<_, String>(5)?,
-      "process_name": row.get::<_, String>(6)?,
+      "source": row.get::<_, String>(0)?,
+      "destination": row.get::<_, String>(1)?,
+      "protocol": row.get::<_, String>(2)?,
+      "up_bps": row.get::<_, i64>(3)?,
+      "down_bps": row.get::<_, i64>(4)?,
+      "process_name": row.get::<_, String>(5)?,
     }))
   })?;
 

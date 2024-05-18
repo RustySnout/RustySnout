@@ -6,7 +6,7 @@ Spring 2024
 ### dependencies
 
 Tauri
-NodeJS
+NodeJS 18.x and above
 
 ## Setting up development env
 

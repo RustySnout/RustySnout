@@ -10,7 +10,7 @@ import Image from "next/image";
 const MonitoringView = () => {
   const [colHeaders, setColHeaders] = useState([]);
   const [rowData, setRowData] = useState([]);
-  const [invokeFunction, setInvokeFunction] = useState("get_connections_wrapper");
+  const [invokeFunction, setInvokeFunction] = useState("get_process_wrapper");
   const [refresh, setRefresh] = useState(false);  
   const [showControlPanel, setShowControlPanel] = useState(false);
 
@@ -34,7 +34,7 @@ const MonitoringView = () => {
   useEffect(() => {
     if (!showControlPanel) { // Fetch data only if ControlPanel is not shown
       setRefresh(true);
-      const fetchData = () => {
+      const fetchData = async () => {
         invoke(invokeFunction).then((res) => {
           setRefresh(false);
           console.log(res);
@@ -52,7 +52,7 @@ const MonitoringView = () => {
       const intervalId = setInterval(fetchData, 5000);
       return () => clearInterval(intervalId);
     }
-  }, [invokeFunction, showControlPanel]);
+  }, [invokeFunction]);
 
   // This changes the style of the refresh icon to show that the data is being refreshed
   // See layout.module.css for the styles .refreshing and .refresh to see how it is done
@@ -75,16 +75,11 @@ const MonitoringView = () => {
             <Image src="/control.svg" alt="Next.js Logo" width={50} height={50} className={styles.symbol}/> 
           </button>
         </div>
-        <Graph />       </div>
+        <Graph />       
+      </div>
       <div className={styles.refreshTable}>
-        {showControlPanel ? (
-          <ControlPanel onClose={handleCloseControlPanel} /> // Render ControlPanel if showControlPanel is true
-        ) : (
-          <>
-            <Image src="/loading.svg" alt="Next.js Logo" width={50} height={50} className={refreshStyle}/>
-            <Table rows={rowData} columns={colHeaders} />
-          </>
-        )}
+        <Image src="/loading.svg" alt="Next.js Logo" width={50} height={50} className={refreshStyle}/>
+        <Table rows={rowData} columns={colHeaders} />
       </div>
     </div>
   );
