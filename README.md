@@ -18,4 +18,5 @@ To run
 The main entry point is `src-tauri/src/main.rs` which also is the Rust backend
 
 Next.JS frontend resides in `src/`
+The main entry point for the frontend is in `src/app/page.js`
 
