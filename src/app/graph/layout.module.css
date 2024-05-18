@@ -5,13 +5,14 @@
     justify-content: center;
     height: 25em;
     margin: 1em;
-    width: 50em;
+    width: 50em;  /* Ensure the graph has a width of 50em */
     background-color: rgba(var(--callout-rgb), 0.5);
     border: 1px solid rgba(var(--callout-border-rgb), 0.3);
     border-radius: var(--border-radius);
     filter: drop-shadow(0 0 0.75rem rgba(var(--callout-border-rgb), 0.2));
-    position: relative; /* Added for positioning the warning banner */
+    position: relative;
   }
+  
   
   .warningBanner {
     position: absolute;

@@ -2,13 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import Table from "../genericTable/layout";
 import Graph from "../graph/layout";
+import ControlPanel from '../ControlPanel/layout'; // Correct the import path
 import styles from './layout.module.css';
 import { invoke } from "@tauri-apps/api/tauri";
 import Image from "next/image";
-
-// TODO: navigate to the control page
-// Or display control view in same page
-const handleControl = () => { };
 
 const MonitoringView = () => {
   const [colHeaders, setColHeaders] = useState([]);
@@ -16,9 +13,10 @@ const MonitoringView = () => {
   const [invokeFunction, setInvokeFunction] = useState("get_process_stats_wrapper");
   const [refresh, setRefresh] = useState(false);
   const [UpBPS, setUpBPS] = useState(1200);  // Temporarily set to a value greater than 1000 for testing
+  const [showControlPanel, setShowControlPanel] = useState(false); // State to manage ControlPanel visibility
 
-  // button handlers that change the state of invokeFunction to the tauri command we need
-  // these are called onClick in the html below
+  // Button handlers that change the state of invokeFunction to the tauri command we need
+  // These are called onClick in the html below
   const handleProcess = () => {
     setInvokeFunction("get_remote_address_wrapper");
   };
@@ -31,33 +29,43 @@ const MonitoringView = () => {
     setInvokeFunction("get_connections_wrapper");
   };
 
+  const handleControl = () => { 
+    setShowControlPanel(true); // Show ControlPanel
+  };
+
+  const handleCloseControlPanel = () => {
+    setShowControlPanel(false); // Close ControlPanel
+  };
+
   useEffect(() => {
-    setRefresh(true);
-    const fetchData = () => {
+    if (!showControlPanel) { // Fetch data only if ControlPanel is not shown
+      setRefresh(true);
+      const fetchData = () => {
         invoke(invokeFunction).then((res) => {
-            setRefresh(false);
-            console.log(res);
-            const data = JSON.parse(res);
-            setColHeaders(Object.keys(data[0]));
-            setRowData(data);
-            // Assuming UpBPS is part of the data fetched
-            if (data.length > 0 && data[0].UpBPS !== undefined) {
-              setUpBPS(data[0].UpBPS);
-            }
+          setRefresh(false);
+          console.log(res);
+          const data = JSON.parse(res);
+          setColHeaders(Object.keys(data[0]));
+          setRowData(data);
+          // Assuming UpBPS is part of the data fetched
+          if (data.length > 0 && data[0].UpBPS !== undefined) {
+            setUpBPS(data[0].UpBPS);
+          }
         }).catch((err) => {
-            setRefresh(false);
-            console.log(err);
+          setRefresh(false);
+          console.log(err);
         });
-    };
+      };
 
-    // fetch data every 5 seconds
-    fetchData();
-    const intervalId = setInterval(fetchData, 5000);
-    return () => clearInterval(intervalId);
-  }, [invokeFunction]);  // Add missing dependency array
+      // Fetch data every 5 seconds
+      fetchData();
+      const intervalId = setInterval(fetchData, 5000);
+      return () => clearInterval(intervalId);
+    }
+  }, [invokeFunction, showControlPanel]);
 
-  // this changes the style of the refresh icon to show that the data is being refreshed
-  // see layout.module.css for the styles .refreshing and .refresh to see how it is done
+  // This changes the style of the refresh icon to show that the data is being refreshed
+  // See layout.module.css for the styles .refreshing and .refresh to see how it is done
   const refreshStyle = refresh ? styles.refreshing : styles.refresh;
 
   return (
@@ -80,8 +88,14 @@ const MonitoringView = () => {
         <Graph UpBPS={UpBPS} /> {/* Pass UpBPS to Graph component */}
       </div>
       <div className={styles.refreshTable}>
-        <Image src="/loading.svg" alt="Next.js Logo" width={50} height={50} className={refreshStyle}/>
-        <Table rows={rowData} columns={colHeaders} />
+        {showControlPanel ? (
+          <ControlPanel onClose={handleCloseControlPanel} /> // Render ControlPanel if showControlPanel is true
+        ) : (
+          <>
+            <Image src="/loading.svg" alt="Next.js Logo" width={50} height={50} className={refreshStyle}/>
+            <Table rows={rowData} columns={colHeaders} />
+          </>
+        )}
       </div>
     </div>
   );
