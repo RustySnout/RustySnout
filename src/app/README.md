@@ -40,6 +40,8 @@ see its usage in `monitoringView` component
 
 graph component yet to be done
 
+(Based on Recharts)
+
 
 ## globals.css
 
