@@ -6,8 +6,8 @@ import styles from './layout.module.css';
 import { invoke } from "@tauri-apps/api/tauri";
 import Image from "next/image";
 
-
-// navigate to the control page
+// TODO: navigate to the control page
+// Or display control view in same page
 const handleControl = () => { };
 
 const MonitoringView = () => {
@@ -16,7 +16,8 @@ const MonitoringView = () => {
   const [invokeFunction, setInvokeFunction] = useState("get_process_stats_wrapper");
   const [refresh, setRefresh] = useState(false);  
 
-
+  // button handlers that change the state of invokeFunction to the tauri command we need
+  // this are called onClick in the html below
   const handleProcess = () => {
     setInvokeFunction("get_process_wrapper");
   };
@@ -44,11 +45,14 @@ const MonitoringView = () => {
         });
     };
 
+    // fetch data every 5 seconds
     fetchData();
     const intervalId = setInterval(fetchData, 5000);
     return () => clearInterval(intervalId);
 });
 
+  // this changes the style of the refresh icon to show that the data is being refreshed
+  // see layout.module.css for the styles .refreshing and .refresh to see how it is done
   const refreshStyle = refresh ? styles.refreshing : styles.refresh;
 
   return (

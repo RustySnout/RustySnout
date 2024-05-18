@@ -1,18 +1,9 @@
 'use client'
 import styles from "./page.module.css";
-import { invoke } from "@tauri-apps/api/tauri"
-import { useEffect } from "react";
 import Image from "next/image";
 import MonitoringView from "./monitoringView/layout";
 
 export default function Home() {
-
-  useEffect(() => {
-    const process_data = invoke("get_process_wrapper").then((res) => {
-      console.log(res);
-    });
-
-  });
 
   return (
     <main className={styles.main}>
@@ -24,6 +15,8 @@ export default function Home() {
     </main>
   );
 }
+
+// this is code for reference keep it
 
       // <div className={styles.description}>
       //   <p>

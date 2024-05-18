@@ -12,6 +12,7 @@
     filter: drop-shadow(0 0 0.75rem rgba(var(--callout-border-rgb), 0.2));
 }
 
+/*if the screen width decreases than 1000px do these styles instead*/
 @media screen and (max-width: 1000px) {
     .graphBody {
         width: 50vw;
