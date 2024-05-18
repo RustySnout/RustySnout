@@ -44,9 +44,7 @@ fn main() {
 
   // Run the Tauri app in the main thread
   tauri::Builder::default()
-    .invoke_handler(tauri::generate_handler![get_process_wrapper])
-    .invoke_handler(tauri::generate_handler![get_process_stats_wrapper])
-    .invoke_handler(tauri::generate_handler![get_connections_wrapper])
+    .invoke_handler(tauri::generate_handler![get_process_wrapper, get_process_stats_wrapper, get_connections_wrapper])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|_app_handle, event| match event { //this is done to prevent backend from exiting so it keeps monitoring
