@@ -28,6 +28,9 @@ const MonitoringView = () => {
     setInvokeFunction("get_connections_wrapper");
   };
 
+  const handleControl = () => {
+  };
+
   useEffect(() => {
     if (!showControlPanel) { // Fetch data only if ControlPanel is not shown
       setRefresh(true);
@@ -38,10 +41,6 @@ const MonitoringView = () => {
           const data = JSON.parse(res);
           setColHeaders(Object.keys(data[0]));
           setRowData(data);
-          // Assuming UpBPS is part of the data fetched
-          if (data.length > 0 && data[0].UpBPS !== undefined) {
-            setUpBPS(data[0].UpBPS);
-          }
         }).catch((err) => {
           setRefresh(false);
           console.log(err);
@@ -76,8 +75,7 @@ const MonitoringView = () => {
             <Image src="/control.svg" alt="Next.js Logo" width={50} height={50} className={styles.symbol}/> 
           </button>
         </div>
-        <Graph UpBPS={UpBPS} /> {/* Pass UpBPS to Graph component */}
-      </div>
+        <Graph />       </div>
       <div className={styles.refreshTable}>
         {showControlPanel ? (
           <ControlPanel onClose={handleCloseControlPanel} /> // Render ControlPanel if showControlPanel is true

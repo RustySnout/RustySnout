@@ -110,8 +110,6 @@
     }
 }
 
-
-
 @media screen and (max-width: 1000px) {
   .monitoringBody {
     flex-direction: column;
