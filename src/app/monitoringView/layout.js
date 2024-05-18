@@ -75,7 +75,7 @@ const MonitoringView = () => {
         <Graph />
       </div>
       <div className={styles.refreshTable}>
-        <Image src="/RustySnout.png" alt="Next.js Logo" width={50} height={50} className={refreshStyle}/>
+        <Image src="/loading.svg" alt="Next.js Logo" width={50} height={50} className={refreshStyle}/>
         <Table rows={rowData} columns={colHeaders} />
       </div>
     </div>
