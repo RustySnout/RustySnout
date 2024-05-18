@@ -34,6 +34,9 @@ use tokio::runtime::Runtime;
 use rusqlite::{Connection, Result};
 fn main() {
 
+  // if data.db exists nuke it
+  nuke_database();
+
   // create database before threads are initiated
   create_database_ifn_exist().expect("Failed to create database");
 
@@ -53,6 +56,7 @@ fn main() {
       }
       _ => {}
     });
+
 }
 
 /* querying data from sqlite database data.db
@@ -63,7 +67,7 @@ fn main() {
 
 // gets the latest process block row and then return json string
 #[tauri::command]
-fn get_process_wrapper() -> String {
+async fn get_process_wrapper() -> String {
   match get_process() {
     Ok(result) => result,
     Err(err) => format!("Error: {}", err),
@@ -71,7 +75,7 @@ fn get_process_wrapper() -> String {
 }
 
 #[tauri::command]
-fn get_process_stats_wrapper() -> String {
+async fn get_process_stats_wrapper() -> String {
   match get_process_stats() {
     Ok(result) => result,
     Err(err) => format!("Error: {}", err),
@@ -79,7 +83,7 @@ fn get_process_stats_wrapper() -> String {
 }
 
 #[tauri::command]
-fn get_connections_wrapper() -> String {
+async fn get_connections_wrapper() -> String {
   match get_connections() {
     Ok(result) => result,
     Err(err) => format!("Error: {}", err),
@@ -288,13 +292,8 @@ fn create_database_ifn_exist() -> anyhow::Result<()> {
 }
 
 fn nuke_database() {
-    let conn = Connection::open("data.db").unwrap();
-    conn.execute("DROP TABLE App", []).unwrap();
-    conn.execute("DROP TABLE processes", []).unwrap();
-    conn.execute("DROP TABLE interfaces", []).unwrap();
-    conn.execute("DROP TABLE interfacesIPS", []).unwrap();
-    conn.execute("DROP TABLE connections", []).unwrap();
-    conn.execute("DROP TABLE remote_addresses", []).unwrap();
+  //delete data.db
+  std::fs::remove_file("data.db").expect("Failed to delete database");
 }
 
 fn start_monitoring() -> anyhow::Result<()> {

@@ -4,12 +4,89 @@
   flex-direction: column;
   justify-content: space-evenly;
   align-items: flex-start;
-  margin: 0rem 2rem 6rem 2.75rem;
   min-height: 25vh;
 
   background-clip: padding-box;
   transition: 200ms;
 }
+
+.topContainer {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: flex-start;
+    width: 100%;
+}
+
+.topContainer button {
+    margin-right: 0.6rem;
+    margin-top: 1.2em;
+    width: 50px;
+    height: 50px;
+    background-color: rgba(var(--callout-rgb), 0.5);
+    border: 1px solid rgba(var(--callout-border-rgb), 0.3);
+    border-radius: 50%;
+    transition: 200ms;
+    justify-content: center;
+    align-items: center;
+}
+
+.buttonContainer {
+    display: flex;
+    flex-direction: column;
+}
+
+.symbol {
+    width: 2em;
+    height: 2em;
+}
+
+.topContainer button:hover {
+    background-color: rgba(var(--callout-rgb), 0.7);
+    box-shadow: 0 0 0.75rem rgba(var(--callout-border-rgb), 0.4);
+}
+
+.topContainer button:active {
+    background-color: rgba(var(--callout-rgb), 0.90);
+}
+
+.refresh {
+   margin-top: 1rem;
+   width: 50px; 
+   height: 50px;
+   border-radius: 50%;
+}
+
+.refreshing { 
+  margin-top: 1rem;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  filter: drop-shadow(0 0 0.75rem rgba(var(--callout-border-rgb), 0.2));
+  animation: fadeInOut 2s ease-in-out infinite;
+}
+
+.refreshTable {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+
+/*rotation keyframes*/
+
+@keyframes fadeInOut {
+    0% {
+        opacity: 0;
+    }
+    50% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+
 
 @media screen and (max-width: 1000px) {
   .monitoringBody {

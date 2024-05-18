@@ -5,7 +5,6 @@ import { useEffect } from "react";
 import Image from "next/image";
 import MonitoringView from "./monitoringView/layout";
 
-
 export default function Home() {
 
   useEffect(() => {
