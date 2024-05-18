@@ -6,15 +6,15 @@ const ControlPanel = ({ onClose }) => {
     <div className={styles.controlPanel}>
       <button onClick={onClose} className={styles.closeButton}>Close</button>
       <div className={styles.controlRow}>
-        <button className={styles.controlButton}>Button 1</button>
+        <button className={styles.controlButton}>CONTROL 1:</button>
         <input type="text" className={styles.controlInput} />
       </div>
       <div className={styles.controlRow}>
-        <button className={styles.controlButton}>Button 2</button>
+        <button className={styles.controlButton}>CONTROL 2:</button>
         <input type="text" className={styles.controlInput} />
       </div>
       <div className={styles.controlRow}>
-        <button className={styles.controlButton}>Button 3</button>
+        <button className={styles.controlButton}>CONTROL 3:</button>
         <input type="text" className={styles.controlInput} />
       </div>
     </div>

@@ -18,7 +18,7 @@
     width: 100%;
 }
 
-.topContainer button {
+.buttonContainer button {
     margin-right: 0.6rem;
     margin-top: 1.2em;
     width: 50px;
@@ -48,12 +48,12 @@
     }
 }
 
-.topContainer button:hover {
+.buttonContainer button:hover {
     background-color: rgba(var(--callout-rgb), 0.7);
     box-shadow: 0 0 0.75rem rgba(var(--callout-border-rgb), 0.4);
 }
 
-.topContainer button:active {
+.buttonContainer button:active {
     background-color: rgba(var(--callout-rgb), 0.90);
 }
 
