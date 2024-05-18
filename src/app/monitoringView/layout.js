@@ -19,11 +19,11 @@ const MonitoringView = () => {
   // button handlers that change the state of invokeFunction to the tauri command we need
   // this are called onClick in the html below
   const handleProcess = () => {
-    setInvokeFunction("get_process_wrapper");
+    setInvokeFunction("get_remote_address_wrapper");
   };
 
   const handleConnection = () => { 
-    setInvokeFunction("get_process_stats_wrapper");
+    setInvokeFunction("get_process_wrapper");
   };
 
   const handleRemoteAddr = () => { 

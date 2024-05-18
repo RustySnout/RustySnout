@@ -47,7 +47,6 @@ define the global styles used throughout the project
 The `:root` is the big parent of all the HTML this is where we define our global css variables accessible by the `var()` keyword
 
 
-
 ---
 
 ## How to use components
