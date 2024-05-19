@@ -58,8 +58,9 @@ fn main() {
         throttle_ip_wrapper,
         remove_interface_throttling_wrapper,
         interface_throttling_wrapper,
-        launch_throttled_app_wrapper
-        ])
+        launch_throttled_app_wrapper,
+        get_current_throughput_wrapper,
+        get_stats_for_interface_wrapper])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|_app_handle, event| match event { //this is done to prevent backend from exiting so it keeps monitoring
@@ -145,6 +146,43 @@ fn get_current_throughput() -> Result<String, anyhow::Error> {
 
   Ok(json!(throughput_vec).to_string())
 }
+
+#[tauri::command]
+async fn get_stats_for_interface_wrapper(interface_name: String) -> String {
+  match get_stats_for_interface(interface_name) {
+    Ok(result) => result,
+    Err(err) => format!("Error: {}", err),
+  }
+}
+
+fn get_stats_for_interface(interface_name: String) -> Result<String, anyhow::Error> {
+    // Get min max and avg bandwidth for an interface
+    let conn = Connection::open("data.db")?;
+    let mut stmt = conn.prepare("SELECT MAX(up_bps), MIN(up_bps), AVG(up_bps), MAX(down_bps), MIN(down_bps), AVG(down_bps) FROM interfaces WHERE interface_name = ?")?;
+
+    let stats_iter = stmt.query_map([interface_name], |row| {
+        Ok(json!({
+            "max_up_bps": row.get::<_, i64>(0)?,
+            "min_up_bps": row.get::<_, i64>(1)?,
+            "avg_up_bps": row.get::<_, i64>(2)?,
+            "max_down_bps": row.get::<_, i64>(3)?,
+            "min_down_bps": row.get::<_, i64>(4)?,
+            "avg_down_bps": row.get::<_, i64>(5)?,
+        }))
+    })?;
+
+    let mut stats_vec = Vec::new();
+
+    for stats in stats_iter {
+        stats_vec.push(stats?);
+    }
+
+    Ok(json!(stats_vec).to_string())
+}
+
+// fn search_by_IP() -> Result<String, anyhow::Error> {
+
+// }
 
 fn get_remote_address() -> Result<String, anyhow::Error> {
 
@@ -505,7 +543,7 @@ fn start_monitoring() -> anyhow::Result<()> {
 
     // initialize the database with the interfaces
     let interfaces = datalink::interfaces();
-    // Allow user to select interface
+
     for (i, interface) in interfaces.iter().enumerate() {
         println!("{}: {:?}", i, interface);
     }
