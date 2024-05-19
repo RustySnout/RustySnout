@@ -1,0 +1,59 @@
+.controlPanel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background-color: rgba(var(--card-rgb), 0.1);
+  border: 1px solid rgba(var(--card-border-rgb), 0.15);
+  border-radius: var(--border-radius);
+  width: 1000%;  /* Adjust width to full width */
+  max-width: 50em;  /* Same width as the graph (50em) */
+  margin: 0 auto;  /* Center horizontally */
+}
+
+.controlRow {
+  display: flex;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.controlButton {
+  padding: 0.5rem 1rem;
+  margin-right: 1rem;
+  background-color: rgba(var(--button-bg-rgb), 1);
+  border: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+}
+
+.controlInput {
+  padding: 0.5rem;
+  border: 1px solid rgba(var(--input-border-rgb), 0.3);
+  border-radius: var(--border-radius);
+  flex-grow: 1;
+}
+
+.closeButton {
+  align-self: flex-end;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+}
+
+.graphBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 25em;
+  margin: 1em;
+  width: 50em;  /* Ensuring the graph has a width of 50em */
+  background-color: rgba(var(--callout-rgb), 0.5);
+  border: 1px solid rgba(var(--callout-border-rgb), 0.3);
+  border-radius: var(--border-radius);
+  filter: drop-shadow(0 0 0.75rem rgba(var(--callout-border-rgb), 0.2));
+  position: relative;
+}

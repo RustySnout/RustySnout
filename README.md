@@ -3,6 +3,10 @@
 A Rust app for network monitoring and control 
 Spring 2024
 
+### dependencies
+
+Tauri
+NodeJS 18.x and above
 
 ## Setting up development env
 

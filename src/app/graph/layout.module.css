@@ -4,17 +4,63 @@
     align-items: center;
     justify-content: center;
     height: 25em;
-    margin: 1em;
     width: 50em;
+    padding: 1em;
+    margin-top: 1em;
+    margin-left: 0.7em;
     background-color: rgba(var(--callout-rgb), 0.5);
     border: 1px solid rgba(var(--callout-border-rgb), 0.3);
     border-radius: var(--border-radius);
     filter: drop-shadow(0 0 0.75rem rgba(var(--callout-border-rgb), 0.2));
+    position: relative;
+  }
+
+.graphBody p {
+    font-size: 0.7em;
+    font-weight: 600;
+    font-family: var(--font-mono);
 }
 
-/*if the screen width decreases than 1000px do these styles instead*/
-@media screen and (max-width: 1000px) {
-    .graphBody {
-        width: 50vw;
+.warning {
+    position: absolute;
+    animation: fadeInOut 2s ease-in-out infinite;
+    width: 2.5em;
+    height: 2.5em;
+    transition: 200ms;
+    right: 10em;
+    top: -1em;
+}
+
+@keyframes fadeInOut {
+    0% {
+      opacity: 0;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
     }
 }
+
+.HeaderContainer {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+  
+@media screen and (max-width: 1000px) {
+    .graphBody {
+      width: 50vw;
+    }
+}
+
+.tooltip {
+    border-radius: var(--border-radius);
+    box-shadow: inset 10em 10em 0rem rgba(var(--callout-rgb), 1);
+    /*recolor with filter*/
+    color: rgba(var(--callout-border-rgb), 1);
+}
+    
+  

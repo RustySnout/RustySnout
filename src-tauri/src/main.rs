@@ -47,7 +47,11 @@ fn main() {
 
   // Run the Tauri app in the main thread
   tauri::Builder::default()
-    .invoke_handler(tauri::generate_handler![get_process_wrapper, get_process_stats_wrapper, get_connections_wrapper])
+    .invoke_handler(tauri::generate_handler![
+        get_process_wrapper,
+        get_remote_address_wrapper,
+        get_connections_wrapper,
+        get_current_throughput_wrapper])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|_app_handle, event| match event { //this is done to prevent backend from exiting so it keeps monitoring
@@ -59,6 +63,7 @@ fn main() {
 
 }
 
+
 /* querying data from sqlite database data.db
    after we have the query functions we will wrap them in the tauri
    command macro so we can invoke them from the javascript 
@@ -67,16 +72,16 @@ fn main() {
 
 // gets the latest process block row and then return json string
 #[tauri::command]
-async fn get_process_wrapper() -> String {
-  match get_process() {
+async fn get_remote_address_wrapper() -> String {
+  match get_remote_address() {
     Ok(result) => result,
     Err(err) => format!("Error: {}", err),
   }
 }
 
 #[tauri::command]
-async fn get_process_stats_wrapper() -> String {
-  match get_process_stats() {
+async fn get_process_wrapper() -> String {
+  match get_process() {
     Ok(result) => result,
     Err(err) => format!("Error: {}", err),
   }
@@ -90,22 +95,72 @@ async fn get_connections_wrapper() -> String {
   }
 }
 
+#[tauri::command]
+async fn get_current_throughput_wrapper() -> String {
+  match get_current_throughput() {
+    Ok(result) => result,
+    Err(err) => format!("Error: {}", err),
+  }
+}
+
+fn get_current_throughput() -> Result<String, anyhow::Error> {
+  let conn = Connection::open("data.db")?;
+  let mut stmt = conn.prepare("SELECT up_bps, down_bps FROM processes WHERE block_number = (SELECT MAX(block_number) FROM processes)")?;
+
+  let throughput_iter = stmt.query_map([], |row| {
+    Ok(json!({
+      "up_bps": row.get::<_, i64>(0)?,
+      "down_bps": row.get::<_, i64>(1)?,
+    }))
+  })?;
+
+  let mut throughput_vec = Vec::new();
+
+  for throughput in throughput_iter {
+    throughput_vec.push(throughput?);
+  }
+
+  Ok(json!(throughput_vec).to_string())
+}
+
+fn get_remote_address() -> Result<String, anyhow::Error> {
+
+  let conn = Connection::open("data.db")?;
+  let mut stmt = conn.prepare("SELECT rid, address, up_bps, down_bps, connections FROM remote_addresses WHERE block_number = (SELECT MAX(block_number) FROM remote_addresses)")?;
+
+  let connections_stats_iter = stmt.query_map([], |row| {
+    Ok(json!({
+      "rid": row.get::<_, String>(0)?,
+      "address": row.get::<_, String>(1)?,
+      "up_bps": row.get::<_, i64>(2)?,
+      "down_bps": row.get::<_, i64>(3)?,
+      "connections": row.get::<_, i64>(4)?,
+    }))
+  })?;
+
+  let mut connections_stats_vec = Vec::new();
+
+  for connections_stats in connections_stats_iter {
+    connections_stats_vec.push(connections_stats?);
+  }
+
+  Ok(json!(connections_stats_vec).to_string())
+
+}
+
 fn get_connections() -> Result<String, anyhow::Error> {
 
   let conn = Connection::open("data.db")?;
-  let mut stmt = conn.prepare("SELECT cid, source, destination, protocol, up_bps, down_bps, process_name, time, block_number FROM connections WHERE block_number = (SELECT MAX(block_number) FROM connections)")?;
+  let mut stmt = conn.prepare("SELECT source, destination, protocol, up_bps, down_bps, process_name FROM connections WHERE block_number = (SELECT MAX(block_number) FROM connections)")?;
 
   let connections_iter = stmt.query_map([], |row| {
     Ok(json!({
-      "cid": row.get::<_, i64>(0)?,
-      "source": row.get::<_, String>(1)?,
-      "destination": row.get::<_, String>(2)?,
-      "protocol": row.get::<_, String>(3)?,
-      "up_bps": row.get::<_, i64>(4)?,
-      "down_bps": row.get::<_, i64>(5)?,
-      "process_name": row.get::<_, String>(6)?,
-      "time": row.get::<_, i64>(7)?,
-      "block_number": row.get::<_, i64>(8)?
+      "source": row.get::<_, String>(0)?,
+      "destination": row.get::<_, String>(1)?,
+      "protocol": row.get::<_, String>(2)?,
+      "up_bps": row.get::<_, i64>(3)?,
+      "down_bps": row.get::<_, i64>(4)?,
+      "process_name": row.get::<_, String>(5)?,
     }))
   })?;
 
@@ -119,10 +174,10 @@ fn get_connections() -> Result<String, anyhow::Error> {
 
 }
 
-fn get_process_stats() -> Result<String, anyhow::Error> {
+fn get_process() -> Result<String, anyhow::Error> {
 
   let conn = Connection::open("data.db")?;
-  let mut stmt = conn.prepare("SELECT pid, process_name, up_bps, down_bps, connections, time, block_number FROM processes WHERE block_number = (SELECT MAX(block_number) FROM processes)")?;
+  let mut stmt = conn.prepare("SELECT pid, process_name, up_bps, down_bps, connections FROM processes WHERE block_number = (SELECT MAX(block_number) FROM processes)")?;
 
   let process_stats_iter = stmt.query_map([], |row| {
     Ok(json!({
@@ -131,8 +186,6 @@ fn get_process_stats() -> Result<String, anyhow::Error> {
       "up_bps": row.get::<_, i64>(2)?,
       "down_bps": row.get::<_, i64>(3)?,
       "connections": row.get::<_, i64>(4)?,
-      "time": row.get::<_, i64>(5)?,
-      "block_number": row.get::<_, i64>(6)?
     }))
   })?;
 
@@ -144,27 +197,6 @@ fn get_process_stats() -> Result<String, anyhow::Error> {
 
   Ok(json!(process_stats_vec).to_string())
 
-}
-
-fn get_process() -> Result<String, anyhow::Error> {
-  let conn = Connection::open("data.db")?;
-  let mut stmt = conn.prepare("SELECT process_name, time, block_number FROM App WHERE block_number = (SELECT MAX(block_number) FROM App)")?;
-
-  let process_iter = stmt.query_map([], |row| {
-    Ok(json!({
-      "process_name": row.get::<_, String>(0)?,
-      "time": row.get::<_, i64>(1)?,
-      "block_number": row.get::<_, i64>(2)?
-    }))
-  })?;
-
-  let mut process_vec = Vec::new();
-
-  for process in process_iter {
-    process_vec.push(process?);
-  }
-
-  Ok(json!(process_vec).to_string())
 }
 
 //use thiserror::Error;
