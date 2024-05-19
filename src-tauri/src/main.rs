@@ -6,6 +6,8 @@ mod dns;
 mod mystate;
 mod objects;
 mod sniffer;
+mod interface_throttling;
+mod process_throttling;
 pub use mystate::*;
 pub use objects::{
     GetInterfaceError, IpTable, LocalSocket, MyState, OpenSockets, OsInputOutput, ProcessInfo,
@@ -51,7 +53,13 @@ fn main() {
         get_process_wrapper,
         get_remote_address_wrapper,
         get_connections_wrapper,
-        get_current_throughput_wrapper])
+        get_interfaces_wrapper,
+        get_current_throughput_wrapper,
+        throttle_ip_wrapper,
+        remove_interface_throttling_wrapper,
+        interface_throttling_wrapper,
+        launch_throttled_app_wrapper
+        ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|_app_handle, event| match event { //this is done to prevent backend from exiting so it keeps monitoring
@@ -101,6 +109,21 @@ async fn get_current_throughput_wrapper() -> String {
     Ok(result) => result,
     Err(err) => format!("Error: {}", err),
   }
+}
+
+#[tauri::command]
+fn throttle_ip_wrapper(ip: &str, rate: &str, interface: &str) {
+  process_throttling::throttle_ip(ip, rate, interface);
+}
+
+#[tauri::command]
+fn remove_interface_throttling_wrapper(interface: &str) {
+  interface_throttling::remove_interface_throttling(interface);
+}
+
+#[tauri::command]
+fn interface_throttling_wrapper(interface: &str, bandwidth_limit: u32) {
+  interface_throttling::interface_throttling(interface, bandwidth_limit);
 }
 
 fn get_current_throughput() -> Result<String, anyhow::Error> {
@@ -174,6 +197,40 @@ fn get_connections() -> Result<String, anyhow::Error> {
 
 }
 
+#[tauri::command]
+fn get_interfaces_wrapper() -> String {
+  match get_interfaces() {
+    Ok(result) => result,
+    Err(err) => format!("Error: {}", err),
+  }
+}
+
+#[tauri::command]
+fn launch_throttled_app_wrapper(interface: String, up_limit: u32, down_limit: u32, app: String) {
+  interface_throttling::launch_throttle_app(up_limit, down_limit, app);
+}
+
+fn get_interfaces() -> Result<String, anyhow::Error> {
+
+  let conn = Connection::open("data.db")?;
+  let mut stmt = conn.prepare("SELECT interface_name, mac FROM interfaces")?;
+
+  let interfaces_iter = stmt.query_map([], |row| {
+    Ok(json!({
+      "interface_name": row.get::<_, String>(0)?,
+      "mac": row.get::<_, String>(1)?,
+    }))
+  })?;
+
+  let mut interfaces_vec = Vec::new();
+
+  for interface in interfaces_iter {
+    interfaces_vec.push(interface?);
+  }
+
+  Ok(json!(interfaces_vec).to_string())
+}
+
 fn get_process() -> Result<String, anyhow::Error> {
 
   let conn = Connection::open("data.db")?;
@@ -198,6 +255,8 @@ fn get_process() -> Result<String, anyhow::Error> {
   Ok(json!(process_stats_vec).to_string())
 
 }
+
+
 
 //use thiserror::Error;
 const DISPLAY_DELTA: Duration = Duration::from_millis(1000);

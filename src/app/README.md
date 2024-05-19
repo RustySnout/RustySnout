@@ -37,17 +37,14 @@ see its usage in `monitoringView` component
     - defines the css styles of the component
 
 ## graph
-
-graph component yet to be done
-
-(Based on Recharts)
-
+Based on Recharts, graphing component that updates dynamically by feeding it a JSON, JSON records are fetched one by one getting
+average upload and download rates from the Rust Backend then are appended in the Frontend. This is done by invoking the `get_throughput_wrapper()`
+routine.
 
 ## globals.css
 
 define the global styles used throughout the project
 The `:root` is the big parent of all the HTML this is where we define our global css variables accessible by the `var()` keyword
-
 
 ---
 

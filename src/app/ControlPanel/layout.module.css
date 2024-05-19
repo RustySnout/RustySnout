@@ -1,59 +1,100 @@
 .controlPanel {
   display: flex;
   flex-direction: column;
-  align-items: center;
   justify-content: center;
-  padding: 2rem;
-  background-color: rgba(var(--card-rgb), 0.1);
-  border: 1px solid rgba(var(--card-border-rgb), 0.15);
+  position: relative;
+  height: 15em;
+  width: 50em;
+  background-color: rgba(var(--callout-rgb), 0.5);
+  border: 1px solid rgba(var(--callout-border-rgb), 0.3);
   border-radius: var(--border-radius);
-  width: 1000%;  /* Adjust width to full width */
-  max-width: 50em;  /* Same width as the graph (50em) */
-  margin: 0 auto;  /* Center horizontally */
+  filter: drop-shadow(0 0 0.75rem rgba(var(--callout-border-rgb), 0.2));
+  margin: 4em 3em 3em 3.2em;
+  padding: 3em 1em;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  transform: translate(20px, -50px); 
 }
 
 .controlRow {
   display: flex;
   align-items: center;
-  margin-bottom: 1rem;
+  width: 100%;
+  justify-content: space-evenly;
+}
+
+@media screen and (max-width: 1000px) {
+  .controlPanel {
+    flex-direction: column;
+  }
 }
 
 .controlButton {
-  padding: 0.5rem 1rem;
-  margin-right: 1rem;
-  background-color: rgba(var(--button-bg-rgb), 1);
-  border: none;
+  padding: 0.75rem 1.5rem;
+  background: rgba(64, 64, 64, 0.326);
+  border: 1px solid rgba(var(--button-border-rgb), 1); 
   border-radius: var(--border-radius);
   cursor: pointer;
+  transition: background-color 0.3s, transform 0.2s, box-shadow 0.2s; 
+  font-size: 0.8rem;
+  margin: 0.5rem;
+  color: #fff;
+  font-family: var(--font-mono);  
+  text-transform: uppercase;  
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.controlButton:hover {
+  background-color: rgba(var(--button-bg-hover-rgb), 1);
+  border: 1px solid rgba(var(--callout-border-rgb), 1);
+  transform: translateY(-2px);
+}
+
+.controlButton:active {
+  background-color: rgba(var(--button-bg-active-rgb), 1);
+  transform: translateY(0);
+}
+
+.controlRmInput {
+  padding: 0.75rem 1.5rem;
+  background: rgba(235, 52, 39, 0.626);
+  border: 1px solid rgba(var(--button-border-rgb), 1); 
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  transition: background-color 0.3s, transform 0.2s, box-shadow 0.2s; 
+  font-size: 0.8rem;
+  color: #fff;
+  font-family: var(--font-mono);  
+  text-transform: uppercase;  
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.controlRmInput:hover {
+  background-color: rgba(235, 52, 39, 0.8);
+  border: 1px solid rgba(var(--callout-border-rgb), 1);
+  transform: translateY(-2px);
+}
+
+.controlRmInput:active {
+  background-color: rgba(235, 52, 39, 1);
+  transform: translateY(0);
 }
 
 .controlInput {
-  padding: 0.5rem;
+  padding: 0.75rem;
   border: 1px solid rgba(var(--input-border-rgb), 0.3);
   border-radius: var(--border-radius);
-  flex-grow: 1;
-}
-
-.closeButton {
-  align-self: flex-end;
-  background: none;
-  border: none;
-  cursor: pointer;
   font-size: 1rem;
-  margin-bottom: 1rem;
+  width: 50%;
+  margin: 0.5rem; 
+  box-sizing: border-box;  
 }
 
-.graphBody {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 25em;
-  margin: 1em;
-  width: 50em;  /* Ensuring the graph has a width of 50em */
-  background-color: rgba(var(--callout-rgb), 0.5);
-  border: 1px solid rgba(var(--callout-border-rgb), 0.3);
+.dropdown {
+  padding: 0.75rem;
+  border: 1px solid rgba(var(--input-border-rgb), 0.3);
   border-radius: var(--border-radius);
-  filter: drop-shadow(0 0 0.75rem rgba(var(--callout-border-rgb), 0.2));
-  position: relative;
+  font-size: 1rem;
+  width: 50%;
+  margin: 0.5rem auto; 
+  box-sizing: border-box;  
 }

@@ -57,6 +57,10 @@
     background-color: rgba(var(--callout-rgb), 0.90);
 }
 
+.topContainer button:disabled {
+    opacity: 0.5;
+}
+
 .refresh {
    margin-top: 1rem;
    width: 3em; 

@@ -17,18 +17,19 @@ const MonitoringView = () => {
   // Button handlers that change the state of invokeFunction to the tauri command we need
   // These are called onClick in the html below
   const handleProcess = () => {
-    setInvokeFunction("get_remote_address_wrapper");
-  };
-
-  const handleConnection = () => { 
     setInvokeFunction("get_process_wrapper");
   };
 
-  const handleRemoteAddr = () => { 
+  const handleConnection = () => { 
     setInvokeFunction("get_connections_wrapper");
   };
 
+  const handleRemoteAddr = () => { 
+    setInvokeFunction("get_remote_address_wrapper");
+  };
+
   const handleControl = () => {
+    setShowControlPanel(!showControlPanel);
   };
 
   useEffect(() => {
@@ -49,7 +50,7 @@ const MonitoringView = () => {
 
       // Fetch data every 5 seconds
       fetchData();
-      const intervalId = setInterval(fetchData, 5000);
+      const intervalId = setInterval(fetchData, 2000);
       return () => clearInterval(intervalId);
     }
   }, [invokeFunction]);
@@ -58,17 +59,25 @@ const MonitoringView = () => {
   // See layout.module.css for the styles .refreshing and .refresh to see how it is done
   const refreshStyle = refresh ? styles.refreshing : styles.refresh;
 
+  const controlPanelOrTable = showControlPanel ? 
+  <ControlPanel /> :  
+  <>
+    <Image src="/loading.svg" alt="Next.js Logo" width={50} height={50} className={refreshStyle}/>
+    <Table rows={rowData} columns={colHeaders} />
+  </>;
+
+
   return (
     <div className={styles.monitoringBody}>
       <div className={styles.topContainer}>
         <div className={styles.buttonContainer}>
-          <button onClick={handleProcess}> 
+          <button onClick={handleProcess} disabled={showControlPanel} > 
             <Image src="/process.svg" alt="Next.js Logo" width={50} height={50} className={styles.symbol}/>  
           </button>
-          <button onClick={handleConnection}> 
+          <button onClick={handleConnection} disabled={showControlPanel} > 
             <Image src="/connections.svg" alt="Next.js Logo" width={50} height={50} className={styles.symbol}/>  
           </button>
-          <button onClick={handleRemoteAddr}> 
+          <button onClick={handleRemoteAddr} disabled={showControlPanel}> 
             <Image src="/remoteAddr.svg" alt="Next.js Logo" width={50} height={50} className={styles.symbol}/>
           </button>
           <button onClick={handleControl}> 
@@ -78,8 +87,7 @@ const MonitoringView = () => {
         <Graph />       
       </div>
       <div className={styles.refreshTable}>
-        <Image src="/loading.svg" alt="Next.js Logo" width={50} height={50} className={refreshStyle}/>
-        <Table rows={rowData} columns={colHeaders} />
+        {controlPanelOrTable}
       </div>
     </div>
   );
